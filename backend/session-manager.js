@@ -1,129 +1,122 @@
 import { spawn } from 'child_process'
-import * as pty from 'node-pty'
-import { store } from './project-store.js'
+import { EventEmitter } from 'events'
 
-const sessions = new Map()
+class SessionManager extends EventEmitter {
+  constructor() {
+    super()
+    this.sessions = new Map()
+  }
 
-function createShell(project) {
-  if (process.platform === 'win32') {
-    // Use child_process.spawn on Windows to avoid node-pty ConPTY crash on kill
-    const proc = spawn('powershell.exe', ['-NoExit', '-Command', '-'], {
-      cwd: project.path,
-      env: process.env,
-      shell: false,
-    })
+  start(project, promptText) {
+    if (this.sessions.has(project.id)) this.stop(project.id)
 
-    // Normalize API to look like node-pty
-    const wrapper = {
-      write: (data) => proc.stdin.write(data),
-      kill: () => { try { proc.kill() } catch {} },
-      onData: (cb) => {
-        proc.stdout.on('data', cb)
-        proc.stderr.on('data', cb)
-      },
-      onExit: (cb) => {
-        proc.on('exit', cb)
-        proc.on('error', cb)
-      },
+    const harness = project.harness || 'omp'
+    let cmd, args
+
+    if (harness === 'omp') {
+      cmd = 'omp'
+      args = ['--model', project.model, '--cwd', project.path, '--new']
+    } else if (harness === 'claude') {
+      cmd = 'claude'
+      args = ['--cwd', project.path]
+    } else if (harness === 'codex') {
+      cmd = 'codex'
+      args = ['--cwd', project.path]
+    } else {
+      cmd = harness
+      args = []
     }
-    return wrapper
-  }
 
-  // Unix: use real node-pty
-  const proc = pty.spawn('bash', [], {
-    name: 'xterm-color',
-    cols: 120,
-    rows: 30,
-    cwd: project.path,
-    env: process.env,
-  })
+    const proc = spawn(`${cmd} ${args.join(' ')}`, {
+      cwd: project.path,
+      shell: true,
+      env: { ...process.env },
+      windowsHide: false,
+    })
 
-  return {
-    write: (data) => proc.write(data),
-    kill: () => proc.kill(),
-    onData: (cb) => proc.onData(cb),
-    onExit: (cb) => proc.onExit(cb),
-  }
-}
+    const session = { process: proc, clients: new Set(), output: [] }
+    this.sessions.set(project.id, session)
 
-export const manager = {
-  start(project) {
-    if (sessions.has(project.id)) return
-
-    const proc = createShell(project)
-    const clients = new Set()
-    sessions.set(project.id, { proc, clients, project })
-
-    // Send the omp command
-    const command = `omp --model ${project.model} --cwd ${project.path} --new\n`
-    proc.write(command)
-
-    proc.onData((data) => {
-      store.appendOutput(project.id, data.toString())
-      clients.forEach((ws) => {
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'output', data: data.toString() }))
+    if (promptText) {
+      setTimeout(() => {
+        if (proc.stdin && !proc.stdin.destroyed) {
+          proc.stdin.write(promptText + '\n')
         }
-      })
+      }, 3000)
+    }
+
+    const onData = (data) => {
+      const text = data.toString()
+      session.output.push({ ts: Date.now(), text })
+      if (session.output.length > 500) session.output.shift()
+      this.broadcast(project.id, { type: 'output', text })
+    }
+
+    proc.stdout?.on('data', onData)
+    proc.stderr?.on('data', onData)
+
+    proc.on('close', (code) => {
+      this.sessions.delete(project.id)
+      const status = code === 0 ? 'done' : 'paused'
+      this.emit('status', project.id, status)
+      this.broadcast(project.id, { type: 'exit', code, status })
     })
 
-    proc.onExit(() => {
-      // Only mark done if session wasn't already removed by stop()
-      if (sessions.has(project.id)) {
-        store.update(project.id, { status: 'done' })
-        clients.forEach((ws) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'status', status: 'done' }))
-          }
-        })
-        sessions.delete(project.id)
-      }
+    proc.on('error', (err) => {
+      this.sessions.delete(project.id)
+      this.emit('status', project.id, 'paused')
+      this.broadcast(project.id, { type: 'error', message: err.message })
     })
 
-    return proc
-  },
+    this.emit('status', project.id, 'running')
+  }
 
   stop(id) {
-    const session = sessions.get(id)
-    if (!session) return
-    try {
-      session.proc.write('exit\n')
-      setTimeout(() => {
-        try { session.proc.kill() } catch {}
-      }, 500)
-    } catch {
-      /* ignore kill errors */
-    }
-    sessions.delete(id)
-  },
+    const s = this.sessions.get(id)
+    if (!s) return
+    try { s.process.kill() } catch {}
+    this.sessions.delete(id)
+    this.emit('status', id, 'idle')
+  }
+
+  send(id, text) {
+    const s = this.sessions.get(id)
+    if (!s || !s.process.stdin || s.process.stdin.destroyed) return
+    s.process.stdin.write(text + '\n')
+  }
 
   addClient(id, ws) {
-    const session = sessions.get(id)
-    if (session) {
-      session.clients.add(ws)
+    const s = this.sessions.get(id)
+    if (!s) { ws.close(); return }
+    s.clients.add(ws)
+    for (const msg of s.output) {
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'output', text: msg.text }))
+      }
     }
-    // Send current project info
-    const project = store.get(id)
-    if (project && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'project', project }))
-    }
-  },
+  }
 
   removeClient(id, ws) {
-    const session = sessions.get(id)
-    if (session) {
-      session.clients.delete(ws)
-    }
-  },
+    const s = this.sessions.get(id)
+    if (s) s.clients.delete(ws)
+  }
 
-  send(id, data) {
-    const session = sessions.get(id)
-    if (session && session.proc) {
-      session.proc.write(data + '\n')
+  broadcast(id, msg) {
+    const s = this.sessions.get(id)
+    if (!s) return
+    const json = JSON.stringify(msg)
+    for (const ws of s.clients) {
+      if (ws.readyState === 1) ws.send(json)
     }
-  },
+  }
 
-  getSession(id) {
-    return sessions.get(id) || null
-  },
+  isRunning(id) {
+    return this.sessions.has(id)
+  }
+
+  getOutput(id) {
+    return this.sessions.get(id)?.output || []
+  }
 }
+
+export const manager = new SessionManager()

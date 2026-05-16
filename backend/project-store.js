@@ -31,13 +31,14 @@ export const store = {
   get(id) {
     return readStore().projects.find((p) => p.id === id) || null
   },
-  create({ name, path, model }) {
+  create({ name, path, model, harness }) {
     const data = readStore()
     const project = {
       id: crypto.randomUUID(),
       name,
       path,
-      model,
+      model: model || '',
+      harness: harness || 'omp',
       status: 'idle',
       output: [],
       createdAt: new Date().toISOString(),
@@ -63,7 +64,7 @@ export const store = {
     const data = readStore()
     const idx = data.projects.findIndex((p) => p.id === id)
     if (idx === -1) return
-    data.projects[idx].output = [...(data.projects[idx].output || []), line].slice(-100)
+    data.projects[idx].output = [...(data.projects[idx].output || []), line].slice(-500)
     writeStore(data)
   },
 }
