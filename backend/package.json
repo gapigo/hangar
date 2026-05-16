@@ -1,0 +1,14 @@
+{
+  "name": "hangar-backend",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4",
+    "ws": "^8",
+    "cors": "^2",
+    "node-pty": "^1"
+  }
+}

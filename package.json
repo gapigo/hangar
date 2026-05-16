@@ -1,0 +1,9 @@
+{
+  "name": "hangar",
+  "type": "module",
+  "scripts": {
+    "dev": "node start.js",
+    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "start": "node start.js"
+  }
+}
