@@ -1,71 +1,61 @@
-import { spawn } from 'child_process'
+import { spawn } from 'node-pty'
 import { EventEmitter } from 'events'
+import os from 'os'
 
 class SessionManager extends EventEmitter {
   constructor() {
     super()
-    this.sessions = new Map()
+    this.sessions = new Map() // id → { pty, clients: Set<WebSocket>, buffer: string[] }
   }
 
   start(project, promptText) {
     if (this.sessions.has(project.id)) this.stop(project.id)
 
-    const harness = project.harness || 'omp'
-    let cmd, args
+    const shell = os.platform() === 'win32' ? 'cmd.exe' : 'bash'
 
-    if (harness === 'omp') {
-      cmd = 'omp'
-      args = ['--model', project.model, '--cwd', project.path, '--new']
-    } else if (harness === 'claude') {
-      cmd = 'claude'
-      args = ['--cwd', project.path]
-    } else if (harness === 'codex') {
-      cmd = 'codex'
-      args = ['--cwd', project.path]
-    } else {
-      cmd = harness
-      args = []
+    // Monta comando baseado no harness
+    const cmds = {
+      omp: `omp --model ${project.model} --cwd "${project.path}" --new`,
+      opencode: `opencode --cwd "${project.path}"`,
+      pi: `pi --cwd "${project.path}"`,
     }
+    const cmd = cmds[project.harness] || cmds.omp
 
-    const proc = spawn(`${cmd} ${args.join(' ')}`, {
+    const ptyProcess = spawn(shell, ['/c', cmd], {
+      name: 'xterm-color',
+      cols: 220,
+      rows: 50,
       cwd: project.path,
-      shell: true,
-      env: { ...process.env },
-      windowsHide: false,
+      env: { ...process.env, TERM: 'xterm-color', COLORTERM: 'truecolor' },
     })
 
-    const session = { process: proc, clients: new Set(), output: [] }
+    const session = { pty: ptyProcess, clients: new Set(), buffer: [] }
     this.sessions.set(project.id, session)
 
+    // Se tiver prompt inicial, envia após 4s
     if (promptText) {
       setTimeout(() => {
-        if (proc.stdin && !proc.stdin.destroyed) {
-          proc.stdin.write(promptText + '\n')
+        if (this.sessions.has(project.id)) {
+          ptyProcess.write(promptText + '\r')
         }
-      }, 3000)
+      }, 4000)
     }
 
-    const onData = (data) => {
-      const text = data.toString()
-      session.output.push({ ts: Date.now(), text })
-      if (session.output.length > 500) session.output.shift()
-      this.broadcast(project.id, { type: 'output', text })
-    }
-
-    proc.stdout?.on('data', onData)
-    proc.stderr?.on('data', onData)
-
-    proc.on('close', (code) => {
-      this.sessions.delete(project.id)
-      const status = code === 0 ? 'done' : 'paused'
-      this.emit('status', project.id, status)
-      this.broadcast(project.id, { type: 'exit', code, status })
+    ptyProcess.onData(data => {
+      session.buffer.push(data)
+      if (session.buffer.length > 1000) session.buffer.shift()
+      for (const ws of session.clients) {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', data }))
+      }
     })
 
-    proc.on('error', (err) => {
+    ptyProcess.onExit(({ exitCode }) => {
       this.sessions.delete(project.id)
-      this.emit('status', project.id, 'paused')
-      this.broadcast(project.id, { type: 'error', message: err.message })
+      const status = exitCode === 0 ? 'done' : 'paused'
+      this.emit('status', project.id, status)
+      for (const ws of session.clients) {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', exitCode, status }))
+      }
     })
 
     this.emit('status', project.id, 'running')
@@ -74,24 +64,32 @@ class SessionManager extends EventEmitter {
   stop(id) {
     const s = this.sessions.get(id)
     if (!s) return
-    try { s.process.kill() } catch {}
+    try { s.pty.kill() } catch {}
     this.sessions.delete(id)
     this.emit('status', id, 'idle')
   }
 
-  send(id, text) {
+  send(id, data) {
     const s = this.sessions.get(id)
-    if (!s || !s.process.stdin || s.process.stdin.destroyed) return
-    s.process.stdin.write(text + '\n')
+    if (s) s.pty.write(data)
+  }
+
+  resize(id, cols, rows) {
+    const s = this.sessions.get(id)
+    if (s) s.pty.resize(cols, rows)
   }
 
   addClient(id, ws) {
     const s = this.sessions.get(id)
-    if (!s) { ws.close(); return }
+    if (!s) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Session not running' }))
+      return
+    }
     s.clients.add(ws)
-    for (const msg of s.output) {
+    // Envia buffer histórico
+    for (const chunk of s.buffer) {
       if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'output', text: msg.text }))
+        ws.send(JSON.stringify({ type: 'data', data: chunk }))
       }
     }
   }
@@ -99,23 +97,6 @@ class SessionManager extends EventEmitter {
   removeClient(id, ws) {
     const s = this.sessions.get(id)
     if (s) s.clients.delete(ws)
-  }
-
-  broadcast(id, msg) {
-    const s = this.sessions.get(id)
-    if (!s) return
-    const json = JSON.stringify(msg)
-    for (const ws of s.clients) {
-      if (ws.readyState === 1) ws.send(json)
-    }
-  }
-
-  isRunning(id) {
-    return this.sessions.has(id)
-  }
-
-  getOutput(id) {
-    return this.sessions.get(id)?.output || []
   }
 }
 

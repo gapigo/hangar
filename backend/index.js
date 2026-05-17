@@ -4,95 +4,105 @@ import { createServer } from 'http'
 import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
-import { detectHarnesses } from './harness-detector.js'
-import { readModels } from './model-reader.js'
+import { detectHarnesses, readModels } from './harness-detector.js'
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Available harnesses
-app.get('/api/harnesses', (req, res) => res.json(detectHarnesses()))
-
-// Available models
-app.get('/api/models', (req, res) => res.json(readModels()))
+// Harnesses e models
+app.get('/api/harnesses', (_, res) => res.json(detectHarnesses()))
+app.get('/api/models', (_, res) => res.json(readModels()))
 
 // Projects CRUD
-app.get('/api/projects', (req, res) => res.json(store.list()))
-
-app.post('/api/projects', (req, res) => {
-  const p = store.create(req.body)
-  res.json(p)
-})
-
+app.get('/api/projects', (_, res) => res.json(store.list()))
+app.post('/api/projects', (req, res) => res.json(store.create(req.body)))
 app.patch('/api/projects/:id', (req, res) => {
   const p = store.update(req.params.id, req.body)
   if (!p) return res.status(404).json({ error: 'not found' })
   res.json(p)
 })
 
-app.delete('/api/projects/:id', (req, res) => {
+// Archive e Delete
+app.post('/api/projects/:id/archive', (req, res) => {
+  const r = store.archive(req.params.id)
+  if (!r) return res.status(404).json({ error: 'not found' })
   manager.stop(req.params.id)
-  store.delete(req.params.id)
-  res.json({ ok: true })
+  res.json(r)
 })
 
-// Start: spawns real process
+app.delete('/api/projects/:id', (req, res) => {
+  const r = store.delete(req.params.id)
+  if (!r) return res.status(404).json({ error: 'not found' })
+  manager.stop(req.params.id)
+  res.json(r)
+})
+
+app.get('/api/archive', (_, res) => res.json(store.listArchive()))
+
+// Start: spawna PTY real
 app.post('/api/projects/:id/start', (req, res) => {
   const p = store.get(req.params.id)
   if (!p) return res.status(404).json({ error: 'not found' })
   const { prompt, harness, model } = req.body || {}
-  // Update harness/model if provided
-  const updates = {}
-  if (harness) updates.harness = harness
-  if (model) updates.model = model
-  if (Object.keys(updates).length) store.update(p.id, updates)
-  const project = { ...p, ...updates }
-  manager.start(project, prompt)
-  store.update(p.id, { status: 'running' })
+  // Atualiza projeto com harness/model escolhidos
+  store.update(p.id, { harness: harness || p.harness, model: model || p.model, status: 'running' })
+  store.saveLastSession(p.id, { harness: harness || p.harness, model: model || p.model, prompt: prompt || '' })
+  const updatedProject = store.get(p.id)
+  manager.start(updatedProject, prompt)
   res.json({ ok: true })
 })
 
-// Stop: kills process
+// Stop
 app.post('/api/projects/:id/stop', (req, res) => {
   manager.stop(req.params.id)
   store.update(req.params.id, { status: 'idle' })
   res.json({ ok: true })
 })
 
-// Listen to session manager events → update store + broadcast
-manager.on('status', (id, status) => {
-  store.update(id, { status })
-  broadcastGlobal({ type: 'status', id, status })
+// Resize terminal
+app.post('/api/projects/:id/resize', (req, res) => {
+  const { cols, rows } = req.body
+  manager.resize(req.params.id, cols, rows)
+  res.json({ ok: true })
 })
 
-// SSE — frontend listens for project status changes
+// SSE global — status updates
 const sseClients = new Set()
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
+  // Heartbeat a cada 30s
+  const interval = setInterval(() => res.write(': ping\n\n'), 30000)
   sseClients.add(res)
-  req.on('close', () => sseClients.delete(res))
+  req.on('close', () => { sseClients.delete(res); clearInterval(interval) })
 })
 
-function broadcastGlobal(data) {
-  const msg = `data: ${JSON.stringify(data)}\n\n`
-  for (const res of sseClients) {
-    try { res.write(msg) } catch {}
-  }
-}
+manager.on('status', (id, status) => {
+  store.update(id, { status })
+  const data = `data: ${JSON.stringify({ type: 'status', id, status })}\n\n`
+  for (const res of sseClients) res.write(data)
+})
 
-// WebSocket for individual sessions
+// WebSocket — terminal PTY bidirecional
 const server = createServer(app)
 const wss = new WebSocketServer({ server })
 
 wss.on('connection', (ws, req) => {
   const id = req.url.replace('/sessions/', '')
   manager.addClient(id, ws)
-  ws.on('message', (data) => manager.send(id, data.toString()))
+  ws.on('message', raw => {
+    try {
+      const msg = JSON.parse(raw)
+      if (msg.type === 'input') manager.send(id, msg.data)
+      if (msg.type === 'resize') manager.resize(id, msg.cols, msg.rows)
+    } catch {
+      manager.send(id, raw.toString())
+    }
+  })
   ws.on('close', () => manager.removeClient(id, ws))
 })
 
-server.listen(3333, () => console.log('Hangar: http://localhost:3333'))
+server.listen(3333, () => console.log('✈️  Hangar backend: http://localhost:3333'))
