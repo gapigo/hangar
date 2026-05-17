@@ -1,6 +1,18 @@
 import { spawn } from 'node-pty'
 import { EventEmitter } from 'events'
 import os from 'os'
+import { homedir } from 'os'
+import { join } from 'path'
+
+const isWindows = os.platform() === 'win32'
+
+// Path to omp's bun-based CLI entry point
+const OMP_CLI_PATH = join(homedir(), 'node_modules', '@oh-my-pi', 'pi-coding-agent', 'src', 'cli.ts')
+
+// On Windows CreateProcess resolves .exe via PATH; fallback to full path
+const BUN_CMD = isWindows
+  ? join(homedir(), '.bun', 'bin', 'bun.exe')
+  : 'bun'
 
 class SessionManager extends EventEmitter {
   constructor() {
@@ -11,23 +23,26 @@ class SessionManager extends EventEmitter {
   start(project, promptText) {
     if (this.sessions.has(project.id)) this.stop(project.id)
 
-    const shell = os.platform() === 'win32' ? 'cmd.exe' : 'bash'
+    let ptyProcess
 
-    // Monta comando baseado no harness
-    const cmds = {
-      omp: `omp --model ${project.model} --cwd "${project.path}" --new`,
-      opencode: `opencode --cwd "${project.path}"`,
-      pi: `pi --cwd "${project.path}"`,
+    if (project.harness === 'omp') {
+      // omp usa bun + cli.ts — no Windows, o wrapper shell script não funciona com cmd.exe
+      const bunExe = BUN_CMD
+      const cliPath = OMP_CLI_PATH
+      const args = [
+        cliPath,
+        '--model', project.model,
+        '--cwd', project.path,
+        '--new',
+      ]
+      ptyProcess = spawn(bunExe, args, this._ptyOptions(project))
+    } else if (project.harness === 'opencode') {
+      ptyProcess = this._spawnShell(`opencode --cwd "${project.path}"`, project)
+    } else if (project.harness === 'pi') {
+      ptyProcess = this._spawnShell(`pi --cwd "${project.path}"`, project)
+    } else {
+      ptyProcess = this._spawnShell(`${project.harness}`, project)
     }
-    const cmd = cmds[project.harness] || cmds.omp
-
-    const ptyProcess = spawn(shell, ['/c', cmd], {
-      name: 'xterm-color',
-      cols: 220,
-      rows: 50,
-      cwd: project.path,
-      env: { ...process.env, TERM: 'xterm-color', COLORTERM: 'truecolor' },
-    })
 
     const session = { pty: ptyProcess, clients: new Set(), buffer: [] }
     this.sessions.set(project.id, session)
@@ -59,6 +74,23 @@ class SessionManager extends EventEmitter {
     })
 
     this.emit('status', project.id, 'running')
+  }
+
+  _ptyOptions(project) {
+    return {
+      name: 'xterm-color',
+      cols: 220,
+      rows: 50,
+      cwd: project.path,
+      env: { ...process.env, TERM: 'xterm-color', COLORTERM: 'truecolor' },
+    }
+  }
+
+  _spawnShell(cmd, project) {
+    if (isWindows) {
+      return spawn('cmd.exe', ['/c', cmd], this._ptyOptions(project))
+    }
+    return spawn('bash', ['-c', cmd], this._ptyOptions(project))
   }
 
   stop(id) {
