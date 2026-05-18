@@ -83,10 +83,11 @@ app.get('/api/events', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
-  // Heartbeat a cada 30s
-  const interval = setInterval(() => res.write(': ping\n\n'), 30000)
+  // Heartbeat a cada 15s — evita timeout do browser/proxy
+  const interval = setInterval(() => res.write(': heartbeat\n\n'), 15000)
   sseClients.add(res)
   req.on('close', () => { sseClients.delete(res); clearInterval(interval) })
+  res.on('error', () => { sseClients.delete(res); clearInterval(interval) })
 })
 
 manager.on('status', (id, status) => {
