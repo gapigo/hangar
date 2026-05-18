@@ -79,15 +79,26 @@ app.post('/api/projects/:id/resize', (req, res) => {
 // SSE global — status updates
 const sseClients = new Set()
 app.get('/api/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache')
-  res.setHeader('Connection', 'keep-alive')
-  res.flushHeaders()
-  // Heartbeat a cada 15s — evita timeout do browser/proxy
-  const interval = setInterval(() => res.write(': heartbeat\n\n'), 15000)
-  sseClients.add(res)
-  req.on('close', () => { sseClients.delete(res); clearInterval(interval) })
-  res.on('error', () => { sseClients.delete(res); clearInterval(interval) })
+	res.setHeader('Content-Type', 'text/event-stream')
+	res.setHeader('Cache-Control', 'no-cache')
+	res.setHeader('Connection', 'keep-alive')
+	res.setHeader('X-Accel-Buffering', 'no')
+	res.flushHeaders()
+	// Send immediate comment to establish connection
+	res.write(': connected\n\n')
+	// Heartbeat every 10s — browsers drop before 30s
+	const interval = setInterval(() => {
+		try {
+			res.write(': ping\n\n')
+		} catch {
+			clearInterval(interval)
+			sseClients.delete(res)
+		}
+	}, 10000)
+	sseClients.add(res)
+	req.on('close', () => { clearInterval(interval); sseClients.delete(res) })
+	req.on('error', () => { clearInterval(interval); sseClients.delete(res) })
+	res.on('error', () => { clearInterval(interval); sseClients.delete(res) })
 })
 
 manager.on('status', (id, status) => {
