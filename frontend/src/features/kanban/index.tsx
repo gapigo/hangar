@@ -344,64 +344,72 @@ export function KanbanView() {
         </DialogContent>
       </Dialog>
 
-      {/* Launch modal */}
-      <Dialog open={!!launchProject} onOpenChange={() => setLaunchProject(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Launch Agent — {launchProject?.name}</DialogTitle>
-            <DialogDescription>
-              Configure harness, model, and optional initial prompt.
-            </DialogDescription>
-          </DialogHeader>
-          <div className='grid gap-4 py-4'>
-            <div className='grid gap-2'>
-              <Label>Harness</Label>
-              <Select value={launchHarness} onValueChange={setLaunchHarness}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableHarnesses.map((h) => (
-                    <SelectItem key={h.id} value={h.id}>
-                      {h.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='grid gap-2'>
-              <Label>Model</Label>
-              <Select value={launchModel} onValueChange={setLaunchModel}>
-                <SelectTrigger>
-                  <SelectValue placeholder='Select a model' />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableModels.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='grid gap-2'>
-              <Label>Initial Prompt (optional)</Label>
-              <Textarea
-                value={launchPrompt}
-                onChange={(e) => setLaunchPrompt(e.target.value)}
-                placeholder='What should the agent do?'
-                className='min-h-[80px]'
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setLaunchProject(null)}>
-              Cancel
-            </Button>
-            <Button onClick={doLaunch}>Launch</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+		{/* Launch modal */}
+		<Dialog open={!!launchProject} onOpenChange={() => setLaunchProject(null)}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Launch {launchProject?.name}</DialogTitle>
+					<DialogDescription>
+						{launchProject?.harness && launchProject?.model
+							? `${launchProject.harness} · ${launchProject.model}`
+							: 'Configure harness, model, and optional initial prompt.'}
+					</DialogDescription>
+				</DialogHeader>
+				<div className='grid gap-4 py-4'>
+					{(!launchProject?.harness || !launchProject?.model) && (
+						<>
+							<div className='grid gap-2'>
+								<Label>Harness</Label>
+								<Select value={launchHarness} onValueChange={setLaunchHarness}>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{availableHarnesses.map((h) => (
+											<SelectItem key={h.id} value={h.id}>
+												{h.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div className='grid gap-2'>
+								<Label>Model</Label>
+								<Select value={launchModel} onValueChange={setLaunchModel}>
+									<SelectTrigger>
+										<SelectValue placeholder='Select a model' />
+									</SelectTrigger>
+									<SelectContent>
+										{availableModels.map((m) => (
+											<SelectItem key={m.id} value={m.id}>
+												{m.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+						</>
+					)}
+					<div className='grid gap-2'>
+						<Label>Initial Prompt (optional)</Label>
+						<Textarea
+							value={launchPrompt}
+							onChange={(e) => setLaunchPrompt(e.target.value)}
+							placeholder='What should the agent do?'
+							className='min-h-[80px]'
+						/>
+					</div>
+				</div>
+				<DialogFooter>
+					<Button variant='outline' onClick={() => setLaunchProject(null)}>
+						Cancel
+					</Button>
+					<Button onClick={doLaunch} className='w-full'>
+						▶ Launch
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
