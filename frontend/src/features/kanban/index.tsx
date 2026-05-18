@@ -427,7 +427,7 @@ export function KanbanView() {
         onDragStart={(e) => setActiveId(e.active.id as string)}
         onDragEnd={handleDragEnd}
       >
-        <div className='grid flex-1 grid-cols-4 gap-4'>
+        <div className='grid flex-1 grid-cols-4 gap-4 min-w-0 overflow-hidden'>
           {COLUMNS.map((col) => (
             <KanbanColumn
               key={col.id}
@@ -469,7 +469,7 @@ function KanbanColumn({
   const { setNodeRef } = useSortable({ id: col.id, data: { type: 'column', columnId: col.id } })
 
   return (
-    <div ref={setNodeRef} className='flex flex-col gap-2'>
+    <div ref={setNodeRef} className='flex flex-col gap-2 min-w-0 w-full overflow-hidden'>
       <div className='flex items-center gap-2 px-1'>
         <div
           className={`h-2 w-2 rounded-full ${
@@ -551,23 +551,23 @@ function ProjectCard({
   const navigate = useNavigate()
 
   return (
-    <Card className={`cursor-grab active:cursor-grabbing overflow-hidden ${className || ''}`}>
+    <Card className={`cursor-grab active:cursor-grabbing overflow-hidden w-full ${className || ''}`}>
       <CardHeader className='pb-2'>
         <div className='flex items-start justify-between gap-2'>
           <div className='min-w-0 flex-1 overflow-hidden'>
-            <h3 className='truncate text-sm font-bold'>{project.name}</h3>
-            <p className='mt-0.5 truncate text-xs text-muted-foreground'>
+            <h3 className='truncate max-w-full text-sm font-bold'>{project.name}</h3>
+            <p className='mt-0.5 truncate max-w-full text-xs text-muted-foreground'>
               {project.path}
             </p>
           </div>
           <div className='flex items-start gap-1'>
             <div className='flex flex-col items-end gap-0.5'>
               {project.harness && (
-                <Badge variant='outline' className='max-w-[80px] truncate text-[9px]'>
+                <Badge variant='outline' className='max-w-[140px] truncate text-[9px]'>
                   {project.harness}
                 </Badge>
               )}
-              <Badge variant='secondary' className='max-w-[80px] truncate text-[10px]'>
+              <Badge variant='secondary' className='max-w-[140px] truncate text-[10px]'>
                 {project.model}
               </Badge>
             </div>
@@ -620,7 +620,7 @@ function ProjectCard({
         </Badge>
         <div className='rounded bg-black/10 px-2 py-1 font-mono text-[10px] leading-tight text-muted-foreground'>
           {project.lastPrompt ? (
-            <div className='truncate'>{project.lastPrompt.slice(0, 80)}</div>
+            <div className='truncate max-w-full'>{project.lastPrompt.slice(0, 80)}</div>
           ) : (
             <span className='opacity-50'>No prompt history</span>
           )}
