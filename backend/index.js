@@ -5,7 +5,14 @@ import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
 import { detectHarnesses, readModels } from './harness-detector.js'
+import { existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import { homedir } from 'os'
 
+
+// Reset any stale "running" statuses from previous crashes
+store.resetRunning()
 const app = express()
 app.use(cors())
 app.use(express.json())
@@ -13,6 +20,8 @@ app.use(express.json())
 // Harnesses e models
 app.get('/api/harnesses', (_, res) => res.json(detectHarnesses()))
 app.get('/api/models', (_, res) => res.json(readModels()))
+// Config
+app.get('/api/config', (_, res) => res.json({ homeDir: homedir() }))
 
 // Projects CRUD
 app.get('/api/projects', (_, res) => res.json(store.list()))
@@ -86,6 +95,17 @@ manager.on('status', (id, status) => {
   for (const res of sseClients) res.write(data)
 })
 
+// Static frontend serving + SPA fallback
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const frontendDist = join(__dirname, '..', 'frontend', 'dist')
+
+if (existsSync(frontendDist)) {
+  app.use(express.static(frontendDist))
+  app.get('*', (_, res) => {
+    res.sendFile(join(frontendDist, 'index.html'))
+  })
+  console.log('📦  Serving frontend from', frontendDist)
+}
 // WebSocket — terminal PTY bidirecional
 const server = createServer(app)
 const wss = new WebSocketServer({ server })

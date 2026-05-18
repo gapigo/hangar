@@ -3,6 +3,13 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 
+function expandPath(p) {
+  if (p.startsWith('~/') || p === '~') {
+    return join(homedir(), p.slice(p === '~' ? 0 : 2))
+  }
+  return p
+}
+
 const DATA_DIR = join(homedir(), '.hangar')
 const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
 const ARCHIVE_DIR = join(DATA_DIR, 'archive')
@@ -56,7 +63,7 @@ export const store = {
     const project = {
       id: randomUUID(),
       name: data.name,
-      path: data.path,
+      path: expandPath(data.path),
       harness: data.harness || 'omp',
       model: data.model || '',
       status: 'idle',
@@ -74,7 +81,9 @@ export const store = {
     const projects = load()
     const i = projects.findIndex(p => p.id === id)
     if (i === -1) return null
-    projects[i] = { ...projects[i], ...data }
+    const merged = { ...projects[i], ...data }
+    if (data.path) merged.path = expandPath(data.path)
+    projects[i] = merged
     save(projects)
     return projects[i]
   },
@@ -96,6 +105,18 @@ export const store = {
     projects.splice(i, 1)
     save(projects)
     return { ok: true }
+  },
+
+  resetRunning() {
+    const projects = load()
+    let changed = false
+    for (const p of projects) {
+      if (p.status === 'running') {
+        p.status = 'idle'
+        changed = true
+      }
+    }
+    if (changed) save(projects)
   },
 
   delete(id) {

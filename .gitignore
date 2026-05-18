@@ -1,3 +1,6 @@
 node_modules/
-hangar.log
-hangar.pid
+*.log
+*.pid
+*.png
+*.jpg
+dist/

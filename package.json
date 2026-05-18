@@ -1,9 +1,21 @@
 {
   "name": "hangar",
+  "version": "1.0.0",
+  "description": "Code agent workspace — single-command Pi harness manager",
   "type": "module",
+  "bin": {
+    "hangar": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "backend/",
+    "frontend/dist/"
+  ],
   "scripts": {
     "dev": "node start.js",
+    "build": "cd frontend && npm run build",
+    "start": "node cli.js",
     "setup": "npm install --prefix backend && npm install --prefix frontend",
-    "start": "node start.js"
+    "prepublishOnly": "npm run build"
   }
 }

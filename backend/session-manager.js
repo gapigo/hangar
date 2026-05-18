@@ -3,6 +3,7 @@ import { EventEmitter } from 'events'
 import os from 'os'
 import { homedir } from 'os'
 import { join } from 'path'
+import { mkdirSync, existsSync } from 'fs'
 
 const isWindows = os.platform() === 'win32'
 
@@ -22,6 +23,11 @@ class SessionManager extends EventEmitter {
 
   start(project, promptText) {
     if (this.sessions.has(project.id)) this.stop(project.id)
+
+    // Ensure project directory exists
+    if (!existsSync(project.path)) {
+      mkdirSync(project.path, { recursive: true })
+    }
 
     let ptyProcess
 
@@ -79,8 +85,8 @@ class SessionManager extends EventEmitter {
   _ptyOptions(project) {
     return {
       name: 'xterm-color',
-      cols: 220,
-      rows: 50,
+      cols: 100,
+      rows: 30,
       cwd: project.path,
       env: { ...process.env, TERM: 'xterm-color', COLORTERM: 'truecolor' },
     }
