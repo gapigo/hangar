@@ -560,7 +560,7 @@ function ProjectCard({
 
   return (
     <Card className={`cursor-grab active:cursor-grabbing overflow-hidden w-full ${className || ''}`}>
-      <CardHeader className='pb-2'>
+      <CardHeader className='pb-2 overflow-hidden'>
         <div className='flex items-start justify-between gap-2'>
           <div className='min-w-0 flex-1 overflow-hidden'>
             <h3 className='truncate max-w-full text-sm font-bold'>{project.name}</h3>
@@ -568,14 +568,14 @@ function ProjectCard({
               {project.path}
             </p>
           </div>
-          <div className='flex items-start gap-1'>
-            <div className='flex flex-col items-end gap-0.5'>
+          <div className='flex items-start gap-1 overflow-hidden min-w-0'>
+            <div className='flex flex-col items-end gap-0.5 overflow-hidden min-w-0'>
               {project.harness && (
-                <Badge variant='outline' className='max-w-[140px] truncate text-[9px]'>
+                <Badge variant='outline' className='max-w-full truncate text-[9px]'>
                   {project.harness}
                 </Badge>
               )}
-              <Badge variant='secondary' className='max-w-[140px] truncate text-[10px]'>
+              <Badge variant='secondary' className='max-w-full truncate text-[10px]'>
                 {project.model}
               </Badge>
             </div>
