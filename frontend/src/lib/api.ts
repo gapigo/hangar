@@ -70,6 +70,10 @@ export const api = {
 
   getTunnel: () => fetch(BASE + '/tunnel').then(r => r.json()),
   getAuthToken: () => fetch(BASE + '/auth/token').then(r => r.json()),
+
+  getAuthStatus: () => fetch(BASE + '/auth/status').then(r => r.json()),
+  saveDiscord: (data: Record<string, unknown>) => fetch(BASE + '/auth/discord', { method: 'PUT', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } }).then(r => r.json()),
+  saveWhatsApp: (data: Record<string, unknown>) => fetch(BASE + '/auth/whatsapp', { method: 'PUT', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } }).then(r => r.json()),
   regenerateToken: () => fetch(BASE + '/auth/token', { method: 'PUT' }).then(r => r.json()),
 }
 

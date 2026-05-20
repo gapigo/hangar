@@ -201,6 +201,26 @@ app.put('/api/auth/token', (_, res) => {
   res.json({ token: auth.token })
 })
 
+// Auth: full status (for Settings page)
+app.get('/api/auth/status', (_, res) => res.json({ ...auth, token: auth.token }))
+
+// Auth: save Discord config
+app.put('/api/auth/discord', (req, res) => {
+  auth.discordBotToken = req.body.discordBotToken || auth.discordBotToken || ''
+  auth.discordChannelId = req.body.discordChannelId || auth.discordChannelId || ''
+  auth.discordEnabled = !!req.body.discordEnabled
+  writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
+  res.json({ ok: true })
+})
+
+// Auth: save WhatsApp config
+app.put('/api/auth/whatsapp', (req, res) => {
+  auth.whatsappEnabled = !!req.body.whatsappEnabled
+  auth.whatsappPhone = req.body.whatsappPhone || auth.whatsappPhone || ''
+  writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
+  res.json({ ok: true })
+})
+
 // WhatsApp
 app.get('/api/whatsapp/qr', (_, res) => res.json(getWhatsAppQR()))
 app.get('/api/whatsapp/status', (_, res) => res.json(getWhatsAppStatus()))

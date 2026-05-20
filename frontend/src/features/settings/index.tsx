@@ -224,7 +224,7 @@ export function SettingsView() {
                 <Label>Channel ID</Label>
                 <Input value={discordChannelId} onChange={(e) => setDiscordChannelId(e.target.value)} placeholder='Right-click channel → Copy ID' />
               </div>
-              <Button onClick={() => toast.success('Discord settings saved to auth.json')}>Save Discord</Button>
+              <Button onClick={async () => { await api.saveDiscord({ discordBotToken: discordToken, discordChannelId, discordEnabled }); toast.success('Discord saved — restart Hangar to apply'); }}>Save Discord</Button>
             </>
           )}
           <Hint open={hintDiscord} onOpenChange={setHintDiscord} title="How to create a Discord Bot">
@@ -272,7 +272,7 @@ export function SettingsView() {
                   <p className='text-xs text-muted-foreground'>Open WhatsApp → Linked Devices → Scan</p>
                 </div>
               )}
-              <Button onClick={() => toast.success('WhatsApp settings saved to auth.json')}>Save WhatsApp</Button>
+              <Button onClick={async () => { await api.saveWhatsApp({ whatsappEnabled, whatsappPhone }); toast.success('WhatsApp saved — restart Hangar to apply'); }}>Save WhatsApp</Button>
             </>
           )}
           <Hint open={hintWhatsApp} onOpenChange={setHintWhatsApp} title="How to set up WhatsApp Bot">
