@@ -64,6 +64,8 @@ export function SettingsView() {
   const [whatsappPhone, setWhatsappPhone] = useState('')
   const [whatsappQR, setWhatsappQR] = useState('')
   const [whatsappStatus, setWhatsappStatus] = useState('disconnected')
+  const [whatsappChatId, setWhatsappChatId] = useState('')
+  const [whatsappChats, setWhatsappChats] = useState<Array<{id:string;name:string;isGroup:boolean}>>([])
 
   const [hintTunnel, setHintTunnel] = useState(false)
   const [hintDiscord, setHintDiscord] = useState(false)
@@ -80,6 +82,12 @@ export function SettingsView() {
       .catch(() => {})
     api.getHarnesses().then(setHarnesses).catch(() => {})
     api.getModels().then(setModels).catch(() => {})
+    api.getAuthStatus().then(d => {
+      if (d.discordEnabled) { setDiscordEnabled(true); setDiscordToken(d.discordBotToken || ''); setDiscordChannelId(d.discordChannelId || '') }
+      if (d.whatsappEnabled) { setWhatsappEnabled(true); setWhatsappPhone(d.whatsappPhone || ''); setWhatsappChatId(d.whatsappChatId || '') }
+    }).catch(() => {})
+    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/whatsapp/chats`)
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setWhatsappChats(d) }).catch(() => {})
     api.getArchive().then(setArchive).catch(() => {})
     api.getAuthToken().then(d => setToken(d.token || '')).catch(() => {})
     api.getTunnel().then(d => {
@@ -272,7 +280,19 @@ export function SettingsView() {
                   <p className='text-xs text-muted-foreground'>Open WhatsApp → Linked Devices → Scan</p>
                 </div>
               )}
-              <Button onClick={async () => { await api.saveWhatsApp({ whatsappEnabled, whatsappPhone }); toast.success('WhatsApp saved — restart Hangar to apply'); }}>Save WhatsApp</Button>
+              <div className='grid gap-2'>
+                <Label>Listen in Chat</Label>
+                <Select value={whatsappChatId} onValueChange={setWhatsappChatId}>
+                  <SelectTrigger><SelectValue placeholder='All chats (no filter)' /></SelectTrigger>
+                  <SelectContent>
+                    {whatsappChats.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.isGroup ? '👥' : '💬'} {c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className='text-xs text-muted-foreground'>Select a specific chat for the bot to listen and respond in. Empty = all chats.</p>
+              </div>
+              <Button onClick={async () => { await api.saveWhatsApp({ whatsappEnabled, whatsappPhone, whatsappChatId }); toast.success('WhatsApp saved — restart Hangar to apply'); }}>Save WhatsApp</Button>
             </>
           )}
           <Hint open={hintWhatsApp} onOpenChange={setHintWhatsApp} title="How to set up WhatsApp Bot">

@@ -14,6 +14,15 @@ const QR_PATH = join(HANGAR_DIR, 'whatsapp-qr.json')
 let client = null
 let apiBase = 'http://localhost:3333/api'
 let authorizedPhone = ''
+let whatsappChatId = ''
+
+export async function getChats() {
+  if (!client?.info?.wid) return []
+  try {
+    const chats = await client.getChats()
+    return chats.map(c => ({ id: c.id._serialized, name: c.name || c.id.user || c.id._serialized, isGroup: c.isGroup }))
+  } catch { return [] }
+}
 
 function loadAuth() {
   if (!existsSync(AUTH_PATH)) return null
@@ -36,6 +45,7 @@ export async function startWhatsAppBot(port) {
     return
   }
   authorizedPhone = auth.whatsappPhone || ''
+  whatsappChatId = auth.whatsappChatId || ''
   apiBase = `http://localhost:${port || 3333}/api`
 
   // Detect Chrome
@@ -89,10 +99,9 @@ export async function startWhatsAppBot(port) {
   })
 
   client.on('message_create', async (msg) => {
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CREATE from=${msg.from} fromMe=${msg.fromMe} body="${msg.body?.substring(0, 80)}"\n`)
-    // Only respond to owner's own messages (fromMe=true)
     if (!msg.fromMe) return
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} PROCESSING fromMe body="${msg.body}"\n`)
+    if (whatsappChatId && msg.from !== whatsappChatId) return
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CMD from=${msg.from} body="${msg.body?.substring(0, 80)}"\n`)
     await handleMessage(msg)
   })
 

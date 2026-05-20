@@ -217,6 +217,7 @@ app.put('/api/auth/discord', (req, res) => {
 app.put('/api/auth/whatsapp', (req, res) => {
   auth.whatsappEnabled = !!req.body.whatsappEnabled
   auth.whatsappPhone = req.body.whatsappPhone || auth.whatsappPhone || ''
+  auth.whatsappChatId = req.body.whatsappChatId || auth.whatsappChatId || ''
   writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
   res.json({ ok: true })
 })
@@ -232,6 +233,12 @@ app.post('/api/whatsapp/debug', async (req, res) => {
   } catch (e) {
     res.json({ error: e.message })
   }
+})
+
+// WhatsApp: list chats for group selection
+app.get('/api/whatsapp/chats', async (_, res) => {
+  const { getChats } = await import('./whatsapp-bot.js')
+  res.json(await getChats())
 })
 
 // WhatsApp
