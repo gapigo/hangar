@@ -6,7 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Square, ArrowLeft } from 'lucide-react'
+import { useSSE } from '@/lib/useSSE'
+import { cn } from '@/lib/utils'
 import { api, type Project } from '@/lib/api'
+import { ArtifactsPanel } from '@/features/sessions/ArtifactsPanel'
+import { useIsMobile } from '@/hooks/use-mobile'
 import '@xterm/xterm/css/xterm.css'
 
 const statusColors: Record<string, string> = {
@@ -23,10 +27,28 @@ export function SessionView() {
   const [project, setProject] = useState<Project | null>(null)
   const [exited, setExited] = useState(false)
   const [exitInfo, setExitInfo] = useState<{ exitCode: number; status: string } | null>(null)
+  const [showArtifacts, setShowArtifacts] = useState(() => {
+    try {
+      return localStorage.getItem('hangar-show-artifacts-' + id) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [pendingCount, setPendingCount] = useState(0)
+  const isMobile = useIsMobile()
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+
+  // Persist artifact panel toggle
+  useEffect(() => {
+    try { localStorage.setItem('hangar-show-artifacts-' + id, String(showArtifacts)) } catch {}
+  }, [showArtifacts, id])
+
+  useSSE(useCallback((data) => {
+    if (data.type === 'comment-added' && data.projectId === id) setPendingCount(c => c + 1)
+  }, [id]))
 
   const refresh = useCallback(() => {
     api.getProjects().then((data: Project[]) => {
@@ -222,6 +244,16 @@ export function SessionView() {
             </Badge>
           </div>
           <div className='flex items-center gap-2'>
+            <Button
+              variant={showArtifacts ? 'default' : 'outline'}
+              size='sm'
+              onClick={() => setShowArtifacts(v => !v)}
+            >
+              Artifacts
+              {pendingCount > 0 && (
+                <Badge className='ml-1 bg-yellow-400 text-black'>{pendingCount}</Badge>
+              )}
+            </Button>
             {isRunning && (
               <Button size='sm' variant='destructive' onClick={handleStop}>
                 <Square className='mr-1 h-3 w-3' /> Stop
@@ -230,13 +262,33 @@ export function SessionView() {
           </div>
         </div>
 
-        {/* Terminal container */}
-        <div
-          ref={termRef}
-          className='flex-1 min-h-0'
-          style={{ padding: '4px', background: '#09090b' }}
-        />
-      </div>
+
+        {/* Split container */}
+        <div className={cn(
+          'flex gap-0 flex-1 overflow-hidden',
+          isMobile && 'flex-col'
+        )}>
+          <div className={cn(
+            'flex-1 min-w-0 flex flex-col',
+            showArtifacts && !isMobile && 'w-1/2 flex-none'
+          )}>
+            {/* Terminal container */}
+            <div
+              ref={termRef}
+              className='flex-1 min-h-0'
+              style={{ padding: '4px', background: '#09090b' }}
+            />
+          </div>
+          {showArtifacts && (
+            <div className={cn(
+              'overflow-y-auto border-l border-border',
+              isMobile ? 'h-64' : 'w-1/2'
+            )}>
+              <ArtifactsPanel projectId={id} />
+            </div>
+          )}
+        </div>
     </div>
+      </div>
   )
 }

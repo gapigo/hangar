@@ -89,6 +89,7 @@ export function KanbanView() {
   const navigate = useNavigate()
   const [homeDir, setHomeDir] = useState('')
   const [settingsDefaultPath, setSettingsDefaultPath] = useState('')
+  const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({})
 
   const refresh = useCallback(() => {
     api.getProjects().then(setProjects).catch(() => {})
@@ -110,6 +111,7 @@ export function KanbanView() {
       ])
     })
   }, [refresh])
+    api.getPendingCommentCounts().then(setPendingCounts).catch(() => {})
 
   // Load config and saved settings
   useEffect(() => {
@@ -133,6 +135,12 @@ export function KanbanView() {
             p.id === data.id ? { ...p, status: data.status as Project['status'] } : p
           )
         )
+      }
+      if (data.type === 'comment-added') {
+        setPendingCounts((prev) => ({
+          ...prev,
+          [data.projectId as string]: (prev[data.projectId as string] || 0) + 1,
+        }))
       }
     }, [])
   )
@@ -444,6 +452,7 @@ export function KanbanView() {
               onArchive={handleArchive}
               onDelete={(p) => setDeleteConfirm(p)}
               activeId={activeId}
+              pendingCounts={pendingCounts}
             />
           ))}
         </div>
@@ -467,12 +476,14 @@ function KanbanColumn({
   onArchive,
   onDelete,
   activeId,
+  pendingCounts,
 }: {
   col: (typeof COLUMNS)[number]
   projects: Project[]
   onArchive: (p: Project) => void
   onDelete: (p: Project) => void
   activeId: string | null
+  pendingCounts: Record<string, number>
 }) {
   const { setNodeRef } = useSortable({ id: col.id, data: { type: 'column', columnId: col.id } })
 
@@ -505,6 +516,7 @@ function KanbanColumn({
                 onArchive={onArchive}
                 onDelete={onDelete}
                 isOverlay={activeId === project.id}
+                pendingCount={pendingCounts[project.id] || 0}
               />
             ))}
           </div>
@@ -519,11 +531,13 @@ function SortableProjectCard({
   onArchive,
   onDelete,
   isOverlay,
+  pendingCount,
 }: {
   project: Project
   onArchive: (p: Project) => void
   onDelete: (p: Project) => void
   isOverlay?: boolean
+  pendingCount?: number
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: project.id,
@@ -540,6 +554,7 @@ function SortableProjectCard({
         onArchive={onArchive}
         onDelete={onDelete}
         className={isOverlay ? 'opacity-80 shadow-lg' : ''}
+        pendingCount={pendingCount}
       />
     </div>
   )
@@ -550,11 +565,13 @@ function ProjectCard({
   onArchive,
   onDelete,
   className,
+  pendingCount,
 }: {
   project: Project
   onArchive: (p: Project) => void
   onDelete: (p: Project) => void
   className?: string
+  pendingCount?: number
 }) {
   const navigate = useNavigate()
 
@@ -563,7 +580,14 @@ function ProjectCard({
       <CardHeader className='pb-2 overflow-hidden'>
         <div className='flex items-start justify-between gap-2'>
           <div className='min-w-0 flex-1 overflow-hidden'>
-            <h3 className='truncate max-w-full text-sm font-bold'>{project.name}</h3>
+            <h3 className='truncate max-w-full text-sm font-bold'>
+              {project.name}
+              {pendingCount != null && pendingCount > 0 && (
+                <Badge className='bg-yellow-400 text-black text-[10px] ml-1 align-middle'>
+                  {'\uD83D\uDCAC'} {pendingCount}
+                </Badge>
+              )}
+            </h3>
             <p className='mt-0.5 truncate max-w-full text-xs text-muted-foreground'>
               {project.path}
             </p>
