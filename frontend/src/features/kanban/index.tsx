@@ -115,7 +115,7 @@ export function KanbanView() {
 
   // Load config and saved settings
   useEffect(() => {
-    fetch('http://localhost:3333/api/config')
+    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/config`)
       .then((r) => r.json())
       .then((c) => setHomeDir(c.homeDir || ''))
       .catch(() => {})

@@ -5,7 +5,7 @@ import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
 import { detectHarnesses, readModels } from './harness-detector.js'
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
@@ -202,4 +202,26 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => manager.removeClient(id, ws))
 })
 
-server.listen(3333, () => console.log('✈️  Hangar backend: http://localhost:3333'))
+
+async function startServer() {
+  const preferred = parseInt(process.env.PORT || '3333', 10)
+  for (let port = preferred; port < preferred + 100; port++) {
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(port, () => {
+          server.removeListener('error', reject)
+          resolve()
+        })
+      })
+      console.log(`✈️  Hangar backend: http://localhost:${port}`)
+      writeFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '.port'), String(port))
+      return
+    } catch (e) {
+      if (e.code !== 'EADDRINUSE') throw e
+    }
+  }
+  throw new Error('No available port found')
+}
+
+startServer()

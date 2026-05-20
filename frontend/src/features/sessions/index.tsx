@@ -104,7 +104,7 @@ export function SessionView() {
     })
     terminalRef.current = term
     // WebSocket connection
-    const wsUrl = `ws://localhost:3333/sessions/${id}`
+    const wsUrl = `ws://localhost:${import.meta.env.VITE_API_PORT || '3333'}/sessions/${id}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 

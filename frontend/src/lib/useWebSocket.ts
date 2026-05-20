@@ -17,7 +17,7 @@ export function useWebSocket(sessionId: string) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
-    const wsUrl = `ws://localhost:3333/sessions/${sessionId}`
+    const wsUrl = `ws://localhost:${import.meta.env.VITE_API_PORT || '3333'}/sessions/${sessionId}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
     setStatus('connecting')

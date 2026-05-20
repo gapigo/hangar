@@ -1,4 +1,5 @@
-const BASE = 'http://localhost:3333/api'
+const PORT = import.meta.env.VITE_API_PORT || '3333'
+const BASE = `http://localhost:${PORT}/api`
 
 export const api = {
   getHarnesses: () =>
