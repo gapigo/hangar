@@ -2,7 +2,7 @@ import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const { Client, LocalAuth } = require('whatsapp-web.js')
 import qrcode from 'qrcode'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -73,11 +73,26 @@ export async function startWhatsAppBot(port) {
     console.log('[whatsapp] Client ready')
   })
 
+  client.on('disconnected', (reason) => {
+    console.log('[whatsapp] DISCONNECTED:', reason)
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} DISCONNECTED reason=${reason}\n`)
+  })
+
+  client.on('change_state', (state) => {
+    console.log('[whatsapp] state:', state)
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} state=${state}\n`)
+  })
+
+  client.on('auth_failure', (msg) => {
+    console.log('[whatsapp] AUTH FAILURE:', msg)
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} AUTH_FAILURE msg=${msg}\n`)
+  })
+
   client.on('message', async (msg) => {
-    console.log('[whatsapp] msg received:', msg.from, 'fromMe:', msg.fromMe, 'body:', msg.body?.substring(0, 50))
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} from=${msg.from} fromMe=${msg.fromMe} body="${msg.body}"\n`)
     // Accept commands from owner (fromMe) or authorized phone
     if (!msg.fromMe && authorizedPhone && !msg.from.includes(authorizedPhone)) return
-    console.log('[whatsapp] processing command:', msg.body)
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} PROCESSING body="${msg.body}"\n`)
     await handleMessage(msg)
   })
 
