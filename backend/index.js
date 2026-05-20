@@ -186,6 +186,7 @@ if (existsSync(frontendDist)) {
 // WebSocket — terminal PTY bidirecional
 const server = createServer(app)
 const wss = new WebSocketServer({ server })
+wss.on('error', () => {}) // prevent crash on port conflicts
 
 wss.on('connection', (ws, req) => {
   const id = req.url.replace('/sessions/', '')
