@@ -5,7 +5,7 @@ import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
 import { detectHarnesses, readModels } from './harness-detector.js'
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync, writeFileSync, readFileSync, createReadStream } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
@@ -79,8 +79,15 @@ app.post('/api/projects/:id/resize', (req, res) => {
 // Artifacts
 app.get('/api/projects/:id/artifacts', (req, res) => {
   const session = manager.getSession(req.params.id)
-  if (!session?.parser) return res.json([])
-  res.json(session.parser.getArtifacts())
+  if (session?.parser) return res.json(session.parser.getArtifacts())
+  // Fallback: read from persisted JSONL
+  const logPath = join(homedir(), '.hangar', 'artifacts', `${req.params.id}.jsonl`)
+  if (!existsSync(logPath)) return res.json([])
+  try {
+    const lines = readFileSync(logPath, 'utf8').trim().split('\n')
+    const artifacts = lines.slice(-200).map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    res.json(artifacts)
+  } catch { res.json([]) }
 })
 
 // Comentar uma linha de um artifact

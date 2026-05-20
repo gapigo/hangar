@@ -55,12 +55,14 @@ function LineWithComment({
   artifactId,
   projectId,
   comments,
+  artifactType,
 }: {
   line: string
   lineIndex: number
   artifactId: string
   projectId: string
   comments?: Comment[]
+  artifactType?: string
 }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
@@ -73,12 +75,26 @@ function LineWithComment({
     setText('')
   }
 
+  const resolve = async (commentId: string) => {
+    await fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/projects/${projectId}/artifacts/${artifactId}/comments/${commentId}/resolve`, { method: 'POST' })
+  }
+
   const pendingCount = comments?.filter((c) => !c.resolved).length || 0
+
+  // Diff colorization
+  const lineColor = artifactType === 'diff'
+    ? line.startsWith('+') ? 'bg-green-950/40 text-green-400'
+    : line.startsWith('-') ? 'bg-red-950/40 text-red-400'
+    : line.startsWith('@@') ? 'text-blue-400 text-[10px]'
+    : line.startsWith('---') || line.startsWith('+++') ? 'text-muted-foreground text-[10px]'
+    : ''
+    : ''
 
   return (
     <div
       className={cn(
         'group flex gap-1 items-start font-mono text-xs px-2 py-0.5 hover:bg-muted/40 relative',
+        lineColor,
         hasPending && 'border-l-2 border-yellow-400 bg-yellow-50/5'
       )}
     >
@@ -90,24 +106,21 @@ function LineWithComment({
         +
       </button>
       <span className="whitespace-pre-wrap break-all flex-1">{line || ' '}</span>
+      {comments?.filter(c => !c.resolved).map((c) => (
+        <button
+          key={c.id}
+          onClick={() => resolve(c.id)}
+          className="text-[9px] text-green-500 hover:text-green-300 hover:underline shrink-0"
+          title={c.text}
+        >
+          {'\u2713'} Resolve
+        </button>
+      ))}
       {pendingCount > 0 && (
         <span className="text-yellow-400 text-[10px] shrink-0">
-          {'\uD83D\uDCAC'}
-          {pendingCount}
+          {'\uD83D\uDCAC'}{pendingCount}
         </span>
       )}
-      {hasPending &&
-        comments
-          ?.filter((c) => !c.resolved)
-          .map((c) => (
-            <span
-              key={c.id}
-              className="text-[10px] text-yellow-600 shrink-0"
-              title={c.text}
-            >
-              {'\uD83D\uDCAC'}
-            </span>
-          ))}
       {open && (
         <div className="absolute left-6 top-full z-50 mt-1 w-64 bg-popover border rounded shadow-lg p-2 flex flex-col gap-2">
           <Textarea
@@ -278,6 +291,7 @@ export function ArtifactsPanel({ projectId }: { projectId: string }) {
                         key={i}
                         line={line}
                         lineIndex={i}
+                        artifactType={artifact.type}
                         artifactId={artifact.id}
                         projectId={projectId}
                         comments={

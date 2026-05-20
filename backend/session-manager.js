@@ -4,7 +4,7 @@ import { EventEmitter } from 'events'
 import os from 'os'
 import { homedir } from 'os'
 import { join } from 'path'
-import { mkdirSync, existsSync } from 'fs'
+import { mkdirSync, existsSync, appendFileSync } from 'fs'
 
 const isWindows = os.platform() === 'win32'
 
@@ -53,9 +53,15 @@ class SessionManager extends EventEmitter {
     }
 
     const session = { pty: ptyProcess, clients: new Set(), buffer: [] }
+    const artifactsDir = join(homedir(), '.hangar', 'artifacts')
+    mkdirSync(artifactsDir, { recursive: true })
+    const artifactLog = join(artifactsDir, `${project.id}.jsonl`)
   const parser = new ArtifactParser(
     project.id,
-    (artifact) => this.emit('artifact', project.id, artifact),
+    (artifact) => {
+      this.emit('artifact', project.id, artifact)
+      try { appendFileSync(artifactLog, JSON.stringify(artifact) + '\n') } catch {}
+    },
     (artifactId, artifact) => this.emit('artifact-update', project.id, artifactId, artifact)
   )
   session.parser = parser

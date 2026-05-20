@@ -16,7 +16,11 @@ export class ArtifactParser {
   push(raw) {
     // 1. Strip ANSI codes para análise (preserva raw para xterm)
     // eslint-disable-next-line no-control-regex
-    const clean = raw.replace(/\x1B\[[0-9;]*[mGKHF]/g, '')
+    const clean = raw
+      .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+      .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '')
+      .replace(/\x1B[()][AB012]/g, '')
+      .replace(/\x1B[^[\]()]/g, '')
     this.buffer += clean
 
     // 2. Processa linhas completas (terminam com \n)
