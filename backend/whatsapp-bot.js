@@ -74,8 +74,8 @@ export async function startWhatsAppBot(port) {
   })
 
   client.on('message', async (msg) => {
-    if (msg.fromMe) return
-    if (authorizedPhone && !msg.from.includes(authorizedPhone)) return
+    // Accept commands from owner (fromMe) or authorized phone
+    if (!msg.fromMe && authorizedPhone && !msg.from.includes(authorizedPhone)) return
     await handleMessage(msg)
   })
 
