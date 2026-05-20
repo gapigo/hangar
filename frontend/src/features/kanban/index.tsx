@@ -54,7 +54,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, MoreHorizontal } from 'lucide-react'
+import { Plus, MoreHorizontal, Loader2 } from 'lucide-react'
 import { api, type Project, type Harness, type ModelInfo } from '@/lib/api'
 import { useSSE } from '@/lib/useSSE'
 
@@ -83,6 +83,7 @@ export function KanbanView() {
   const [launchPrompt, setLaunchPrompt] = useState('')
   const [launchHarness, setLaunchHarness] = useState('omp')
   const [launchModel, setLaunchModel] = useState('')
+  const [launching, setLaunching] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [harnesses, setHarnesses] = useState<Harness[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -218,22 +219,26 @@ export function KanbanView() {
   }
 
   const doLaunch = () => {
-    if (!launchProject) return
+    if (!launchProject || launching) return
+    setLaunching(true)
     api
       .updateProject(launchProject.id, { harness: launchHarness, model: launchModel })
+      .then(() =>
+        api.startProject(launchProject.id, {
+          prompt: launchPrompt || undefined,
+          harness: launchHarness,
+          model: launchModel,
+        })
+      )
       .then(() => {
-        api
-          .startProject(launchProject.id, {
-            prompt: launchPrompt || undefined,
-            harness: launchHarness,
-            model: launchModel,
-          })
-          .then(() => {
-            refresh()
-            navigate({ to: '/sessions/$id', params: { id: launchProject.id } })
-          })
+        refresh()
+        setLaunchProject(null)
+        setLaunching(false)
+        navigate({ to: '/sessions/$id', params: { id: launchProject.id } })
       })
-    setLaunchProject(null)
+      .catch(() => {
+        setLaunching(false)
+      })
   }
 
   const createProject = () => {
@@ -353,7 +358,7 @@ export function KanbanView() {
       </Dialog>
 
 		{/* Launch modal */}
-		<Dialog open={!!launchProject} onOpenChange={() => setLaunchProject(null)}>
+		<Dialog open={!!launchProject} onOpenChange={() => { if (!launching) setLaunchProject(null) }}>
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Launch {launchProject?.name}</DialogTitle>
@@ -409,12 +414,13 @@ export function KanbanView() {
 					</div>
 				</div>
 				<DialogFooter>
-					<Button variant='outline' onClick={() => setLaunchProject(null)}>
-						Cancel
-					</Button>
-					<Button onClick={doLaunch} className='w-full'>
-						▶ Launch
-					</Button>
+          <Button variant='outline' onClick={() => setLaunchProject(null)} disabled={launching}>
+            Cancel
+          </Button>
+          <Button onClick={doLaunch} className='w-full' disabled={launching}>
+            {launching ? <Loader2 className='mr-1 h-4 w-4 animate-spin' /> : '\u25B6'}
+            {launching ? 'Launching...' : 'Launch'}
+          </Button>
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>

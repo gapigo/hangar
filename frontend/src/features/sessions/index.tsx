@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Square, ArrowLeft } from 'lucide-react'
+import { Square, ArrowLeft, Play, Loader2 } from 'lucide-react'
 import { useSSE } from '@/lib/useSSE'
 import { cn } from '@/lib/utils'
 import { api, type Project } from '@/lib/api'
@@ -35,6 +35,9 @@ export function SessionView() {
     }
   })
   const [pendingCount, setPendingCount] = useState(0)
+  const [connecting, setConnecting] = useState(true)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState('')
   const isMobile = useIsMobile()
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -46,8 +49,19 @@ export function SessionView() {
     try { localStorage.setItem('hangar-show-artifacts-' + id, String(showArtifacts)) } catch {}
   }, [showArtifacts, id])
 
+  // SSE: listen for status changes AND comment events
   useSSE(useCallback((data) => {
     if (data.type === 'comment-added' && data.projectId === id) setPendingCount(c => c + 1)
+    if (data.type === 'status' && data.id === id) {
+      setProject((prev) => prev ? { ...prev, status: data.status as Project['status'] } : prev)
+      if (data.status === 'running') {
+        setExited(false)
+        setExitInfo(null)
+        setConnecting(true)
+        setStartError('')
+        setStarting(false)
+      }
+    }
   }, [id]))
 
   const refresh = useCallback(() => {
@@ -97,16 +111,19 @@ export function SessionView() {
 
     term.loadAddon(fitAddon)
     term.open(termRef.current)
-    // Delay fit to let the container layout settle
     requestAnimationFrame(() => {
       fitAddon.fit()
       requestAnimationFrame(() => fitAddon.fit())
     })
     terminalRef.current = term
-    // WebSocket connection
+
     const wsUrl = `ws://localhost:${import.meta.env.VITE_API_PORT || '3333'}/sessions/${id}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
+
+    ws.onopen = () => {
+      setConnecting(false)
+    }
 
     ws.onmessage = (event) => {
       try {
@@ -116,12 +133,12 @@ export function SessionView() {
         } else if (msg.type === 'exit') {
           setExited(true)
           setExitInfo({ exitCode: msg.exitCode, status: msg.status })
-          term.write(`\r\n\x1b[33m[Process exited with code ${msg.exitCode} — ${msg.status}]\x1b[0m\r\n`)
+          term.write(`\r\n\x1b[33m[Process exited with code ${msg.exitCode} \u2014 ${msg.status}]\x1b[0m\r\n`)
         } else if (msg.type === 'error') {
-          term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`)
+          setStartError(msg.message)
+          term.write(`\r\n\x1b[31m[${msg.message}]\x1b[0m\r\n`)
         }
       } catch {
-        // binary or raw data
         term.write(event.data)
       }
     }
@@ -130,14 +147,12 @@ export function SessionView() {
       setExited(true)
     }
 
-    // Input from terminal → WebSocket
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(data)
       }
     })
 
-    // Resize handling
     const resizeObserver = new ResizeObserver(() => {
       if (!fitAddonRef.current) return
       fitAddonRef.current.fit()
@@ -151,7 +166,6 @@ export function SessionView() {
       resizeObserver.observe(termRef.current)
     }
 
-    // Focus terminal on click
     termRef.current.addEventListener('click', () => term.focus())
 
     return () => {
@@ -169,7 +183,28 @@ export function SessionView() {
     refresh()
   }
 
+  const handleStart = async () => {
+    if (!project) return
+    setStarting(true)
+    setStartError('')
+    setExited(false)
+    setExitInfo(null)
+    setConnecting(true)
+    try {
+      await api.startProject(id, {
+        harness: project.harness || 'omp',
+        model: project.model,
+      })
+      refresh()
+    } catch (e) {
+      setStartError(String(e))
+      setStarting(false)
+      setConnecting(false)
+    }
+  }
+
   const isRunning = project?.status === 'running' && !exited
+  const canStart = project && !isRunning && project.status !== 'running'
 
   // Inject xterm layout fixes on mount
   useEffect(() => {
@@ -259,9 +294,36 @@ export function SessionView() {
                 <Square className='mr-1 h-3 w-3' /> Stop
               </Button>
             )}
+            {canStart && (
+              <Button size='sm' onClick={handleStart} disabled={starting}>
+                {starting ? (
+                  <Loader2 className='mr-1 h-3 w-3 animate-spin' />
+                ) : (
+                  <Play className='mr-1 h-3 w-3' />
+                )}
+                {starting ? 'Starting...' : 'Start'}
+              </Button>
+            )}
           </div>
         </div>
 
+        {/* Connecting overlay */}
+        {connecting && isRunning && (
+          <div className='flex items-center justify-center gap-2 py-2 bg-emerald-500/10 border-b border-emerald-500/20 text-xs text-emerald-400'>
+            <Loader2 className='h-3 w-3 animate-spin' />
+            Connecting to session...
+          </div>
+        )}
+
+        {/* Start error */}
+        {startError && (
+          <div className='flex items-center justify-center gap-2 py-2 bg-destructive/10 border-b border-destructive/20 text-xs text-destructive'>
+            {startError}
+            <Button size='sm' variant='outline' className='h-6 text-[10px]' onClick={handleStart}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {/* Split container */}
         <div className={cn(
@@ -275,7 +337,7 @@ export function SessionView() {
             {/* Terminal container */}
             <div
               ref={termRef}
-              className='flex-1 min-h-0'
+              className='flex-1 min-h-0 relative'
               style={{ padding: '4px', background: '#09090b' }}
             />
           </div>
@@ -288,7 +350,7 @@ export function SessionView() {
             </div>
           )}
         </div>
-    </div>
       </div>
+    </div>
   )
 }
