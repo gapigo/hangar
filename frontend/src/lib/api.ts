@@ -51,7 +51,23 @@ export const api = {
       body: JSON.stringify({ cols, rows }),
       headers: { 'Content-Type': 'application/json' },
     }).then((r) => r.json()),
+
+  getArtifacts: (id: string) =>
+    fetch(BASE + '/projects/' + id + '/artifacts').then((r) => r.json()),
+
+  addComment: (id: string, artifactId: string, lineIndex: number, text: string) =>
+    fetch(BASE + '/projects/' + id + '/artifacts/' + artifactId + '/comments', {
+      method: 'POST',
+      body: JSON.stringify({ lineIndex, text }),
+      headers: { 'Content-Type': 'application/json' },
+    }).then((r) => r.json()),
+
+  sendFeedback: (id: string) =>
+    fetch(BASE + '/projects/' + id + '/feedback', { method: 'POST' }).then((r) => r.json()),
+  getPendingCommentCounts: () =>
+    fetch(BASE + '/projects/pending-comment-counts').then((r) => r.json()) as Promise<Record<string, number>>,
 }
+
 
 export type Project = {
   id: string

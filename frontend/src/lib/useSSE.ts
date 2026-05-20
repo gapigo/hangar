@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 
-type SSEEvent = { type: string; id: string; status: string }
+type SSEEvent = { type: string;[key: string]: unknown }
 type SSEEventHandler = (data: SSEEvent) => void
 
 export function useSSE(onEvent: SSEEventHandler) {
