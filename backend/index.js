@@ -76,6 +76,61 @@ app.post('/api/projects/:id/resize', (req, res) => {
   res.json({ ok: true })
 })
 
+// Artifacts
+app.get('/api/projects/:id/artifacts', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  if (!session?.parser) return res.json([])
+  res.json(session.parser.getArtifacts())
+})
+
+// Comentar uma linha de um artifact
+app.post('/api/projects/:id/artifacts/:artifactId/comments', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  if (!session?.parser) return res.status(404).json({ error: 'no session' })
+  const { lineIndex, text } = req.body
+  const comment = session.parser.addComment(req.params.artifactId, lineIndex, text)
+  if (!comment) return res.status(404).json({ error: 'artifact not found' })
+  // Notifica SSE
+  const sseData = `data: ${JSON.stringify({ type: 'comment-added', projectId: req.params.id, artifactId: req.params.artifactId, comment })}\n\n`
+  for (const sse of sseClients) sse.write(sseData)
+  res.json(comment)
+})
+
+// Resolver um comentário
+app.post('/api/projects/:id/artifacts/:artifactId/comments/:commentId/resolve', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  if (!session?.parser) return res.status(404).json({ error: 'no session' })
+  const c = session.parser.resolveComment(req.params.artifactId, req.params.commentId)
+  res.json(c || { error: 'not found' })
+})
+
+// Send feedback: injeta todos os comentários pendentes no PTY stdin
+app.post('/api/projects/:id/feedback', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  if (!session?.parser) return res.status(404).json({ error: 'no session' })
+  const xml = session.parser.serializeCommentsAsXML()
+  if (!xml) return res.json({ ok: true, injected: false, message: 'no pending comments' })
+  // Injeta como se o usuário tivesse digitado — com \n para submeter
+  manager.send(req.params.id, '\n' + xml + '\n')
+  // Marca todos como resolvidos
+  for (const { artifact, comment } of session.parser.getPendingComments()) {
+    session.parser.resolveComment(artifact.id, comment.id)
+  }
+  res.json({ ok: true, injected: true, xml })
+})
+
+
+// Pending comment counts for all active sessions (used by Kanban badges)
+app.get('/api/projects/pending-comment-counts', (_, res) => {
+  const counts = {}
+  for (const [id, session] of manager.sessions.entries()) {
+    if (session.parser) {
+      const pending = session.parser.getPendingComments()
+      if (pending.length > 0) counts[id] = pending.length
+    }
+  }
+  res.json(counts)
+})
 // SSE global — status updates
 const sseClients = new Set()
 app.get('/api/events', (req, res) => {
@@ -105,6 +160,16 @@ manager.on('status', (id, status) => {
   store.update(id, { status })
   const data = `data: ${JSON.stringify({ type: 'status', id, status })}\n\n`
   for (const res of sseClients) res.write(data)
+})
+
+manager.on('artifact', (projectId, artifact) => {
+  const data = `data: ${JSON.stringify({ type: 'artifact', projectId, artifact })}\n\n`
+  for (const sse of sseClients) sse.write(data)
+})
+
+manager.on('artifact-update', (projectId, artifactId, artifact) => {
+  const data = `data: ${JSON.stringify({ type: 'artifact-update', projectId, artifactId, artifact })}\n\n`
+  for (const sse of sseClients) sse.write(data)
 })
 
 // Static frontend serving + SPA fallback
