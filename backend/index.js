@@ -14,6 +14,8 @@ import { createServer } from 'http'
 import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
+import { startDiscordBot, notifyDiscord } from './discord-bot.js'
+import { startWhatsAppBot, notifyWhatsApp, getWhatsAppQR, getWhatsAppStatus } from './whatsapp-bot.js'
 import { detectHarnesses, readModels } from './harness-detector.js'
 import { existsSync, writeFileSync, readFileSync, createReadStream, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
@@ -198,6 +200,10 @@ app.put('/api/auth/token', (_, res) => {
   writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
   res.json({ token: auth.token })
 })
+
+// WhatsApp
+app.get('/api/whatsapp/qr', (_, res) => res.json(getWhatsAppQR()))
+app.get('/api/whatsapp/status', (_, res) => res.json(getWhatsAppStatus()))
 // SSE global — status updates
 const sseClients = new Set()
 app.get('/api/events', (req, res) => {
@@ -227,11 +233,18 @@ manager.on('status', (id, status) => {
   store.update(id, { status })
   const data = `data: ${JSON.stringify({ type: 'status', id, status })}\n\n`
   for (const res of sseClients) res.write(data)
+  const p = store.get(id)
+  if (p) notifyWhatsApp(p.name, status)
+  if (p) notifyDiscord(p.name, status, { sessionId: id })
 })
 
 manager.on('artifact', (projectId, artifact) => {
   const data = `data: ${JSON.stringify({ type: 'artifact', projectId, artifact })}\n\n`
   for (const sse of sseClients) sse.write(data)
+  if (artifact.type === 'diff') {
+    const p = store.get(projectId)
+    if (p) notifyDiscord(p.name, 'diff', { sessionId: projectId })
+  }
 })
 
 manager.on('artifact-update', (projectId, artifactId, artifact) => {
@@ -284,6 +297,8 @@ async function startServer() {
       })
       console.log(`✈️  Hangar backend: http://localhost:${port}`)
       writeFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '.port'), String(port))
+      startDiscordBot(port)
+      startWhatsAppBot(port)
       return
     } catch (e) {
       if (e.code !== 'EADDRINUSE') throw e
