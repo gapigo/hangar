@@ -150,27 +150,26 @@ export async function startWhatsAppBot(port) {
     appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} AUTH_FAILURE msg=${msg}\n`)
   })
 
-  client.on('message_create', async (msg) => {
-    // 1. Anti-loop: only owner's own messages
-    if (!msg.fromMe) return
-    // 2. Chat filter: only listen in selected chat
+
+  async function processIncoming(msg, isOwn) {
+    // 1. Chat filter: only listen in selected chat
     if (whatsappChatId && msg.from !== whatsappChatId) return
 
     const chat = await msg.getChat()
 
-    // 3. Rate limit
+    // 2. Rate limit
     if (!canRespond(chat.id._serialized)) return
 
-    // 4. Parse command
+    // 3. Parse command
     const raw = msg.body.trim()
     const body = raw.replace(/^[!/]/, '').trim()
     const [cmd, ...args] = body.split(/\s+/)
     const cmdLower = (cmd || '').toLowerCase()
 
-    // 5. Group prefix check: in groups, require ! or / prefix
+    // 4. Group prefix check: in groups, require ! or / prefix
     if (chat.isGroup && !/^[!/]/.test(raw.trim())) return
 
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CMD chat=${chat.id._serialized} group=${chat.isGroup} cmd="${cmdLower}" args="${args.join(' ')}"\n`)
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CMD chat=${chat.id._serialized} isOwn=${isOwn} group=${chat.isGroup} cmd="${cmdLower}" args="${args.join(' ')}"\n`)
 
     try {
       await executeCommand(chat, cmdLower, args, raw)
@@ -180,6 +179,18 @@ export async function startWhatsAppBot(port) {
       await safeSend(chat, `❌ Error: ${e.message}`)
       markResponded(chat.id._serialized)
     }
+  }
+
+  // Incoming messages from others
+  client.on('message', async (msg) => {
+    if (msg.fromMe) return
+    await processIncoming(msg, false)
+  })
+
+  // Own messages (self-chat, some groups)
+  client.on('message_create', async (msg) => {
+    if (!msg.fromMe) return
+    await processIncoming(msg, true)
   })
 
   try {
