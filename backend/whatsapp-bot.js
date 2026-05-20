@@ -88,11 +88,11 @@ export async function startWhatsAppBot(port) {
     appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} AUTH_FAILURE msg=${msg}\n`)
   })
 
-  client.on('message', async (msg) => {
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} from=${msg.from} fromMe=${msg.fromMe} body="${msg.body}"\n`)
-    // Accept commands from owner (fromMe) or authorized phone
-    if (!msg.fromMe && authorizedPhone && !msg.from.includes(authorizedPhone)) return
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} PROCESSING body="${msg.body}"\n`)
+  client.on('message_create', async (msg) => {
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CREATE from=${msg.from} fromMe=${msg.fromMe} body="${msg.body?.substring(0, 80)}"\n`)
+    // Only respond to owner's own messages (fromMe=true)
+    if (!msg.fromMe) return
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} PROCESSING fromMe body="${msg.body}"\n`)
     await handleMessage(msg)
   })
 
