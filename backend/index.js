@@ -221,6 +221,19 @@ app.put('/api/auth/whatsapp', (req, res) => {
   res.json({ ok: true })
 })
 
+// WhatsApp debug: send test command
+app.post('/api/whatsapp/debug', async (req, res) => {
+  const { default: mod } = await import('./whatsapp-bot.js')
+  // Test the internal handler directly
+  try {
+    const projects = await fetch(`http://localhost:${server.address().port}/api/projects`).then(r => r.json())
+    const lines = projects.map(p => `${p.status === 'running' ? '🟢' : '⚪'} ${p.name} (${p.status})`)
+    res.json({ projects: lines, count: lines.length })
+  } catch (e) {
+    res.json({ error: e.message })
+  }
+})
+
 // WhatsApp
 app.get('/api/whatsapp/qr', (_, res) => res.json(getWhatsAppQR()))
 app.get('/api/whatsapp/status', (_, res) => res.json(getWhatsAppStatus()))
