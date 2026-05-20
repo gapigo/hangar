@@ -133,6 +133,25 @@ app.get('/api/projects/:id/artifacts', (req, res) => {
   } catch { res.json([]) }
 })
 
+// Inject text into PTY (WhatsApp bot /send command)
+app.post('/api/projects/:id/send', (req, res) => {
+  const { data } = req.body || {}
+  if (!data) return res.status(400).json({ error: 'missing data' })
+  const session = manager.getSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'session not running' })
+  manager.send(req.params.id, data)
+  res.json({ ok: true })
+})
+
+// Terminal buffer output (WhatsApp bot /logs /screenshot)
+app.get('/api/projects/:id/terminal', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  const limit = parseInt(req.query.lines) || 20
+  if (!session?.buffer) return res.json([])
+  const buffer = session.buffer.join('').split('\n').map(l => l.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ''))
+  res.json(buffer.slice(-limit))
+})
+
 // Comentar uma linha de um artifact
 app.post('/api/projects/:id/artifacts/:artifactId/comments', (req, res) => {
   const session = manager.getSession(req.params.id)

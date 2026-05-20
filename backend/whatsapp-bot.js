@@ -15,6 +15,58 @@ let client = null
 let apiBase = 'http://localhost:3333/api'
 let authorizedPhone = ''
 let whatsappChatId = ''
+let backendPort = 3333
+
+// ── Rate limiting ──
+const rateLimit = new Map() // chatId → lastResponseTime
+const RATE_LIMIT_MS = 3000 // 3 seconds between responses per chat
+
+function canRespond(chatId) {
+  const last = rateLimit.get(chatId)
+  if (last && Date.now() - last < RATE_LIMIT_MS) return false
+  return true
+}
+
+function markResponded(chatId) {
+  rateLimit.set(chatId, Date.now())
+}
+
+// ── Helpers ──
+
+async function fetchProjects() {
+  return fetch(`${apiBase}/projects`).then(r => r.json())
+}
+
+async function findProject(name) {
+  const projects = await fetchProjects()
+  return name ? projects.find(p => p.name.toLowerCase().includes(name.toLowerCase())) : null
+}
+
+async function safeSend(chat, text) {
+  try {
+    await chat.sendMessage(text.slice(0, 4000))
+  } catch (e) {
+    console.error('[whatsapp] safeSend error:', e.message)
+  }
+}
+
+const HELP_TEXT = `📋 *Hangar WhatsApp Commands*
+
+*!status* — List all projects
+*!project <name>* — Show project details
+*!launch <name> [prompt]* — Start agent session
+*!stop <name>* — Stop agent session
+*!restart <name>* — Restart a session
+*!logs <name> [lines]* — View terminal output (default 20)
+*!send <name> <text>* — Inject text into agent terminal
+*!artifacts <name>* — Show latest artifacts
+*!comment <name> <line> <text>* — Comment on a line
+*!screenshot <name>* — Capture terminal output
+*!help* — Show this message
+
+In groups, prefix with ! In DMs, prefix is optional.`
+
+// ── Chat list (for Settings dropdown) ──
 
 export async function getChats() {
   if (!client?.info?.wid) return []
@@ -46,9 +98,9 @@ export async function startWhatsAppBot(port) {
   }
   authorizedPhone = auth.whatsappPhone || ''
   whatsappChatId = auth.whatsappChatId || ''
-  apiBase = `http://localhost:${port || 3333}/api`
+  backendPort = port || 3333
+  apiBase = `http://localhost:${backendPort}/api`
 
-  // Detect Chrome
   const chromePaths = [
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
@@ -99,10 +151,35 @@ export async function startWhatsAppBot(port) {
   })
 
   client.on('message_create', async (msg) => {
+    // 1. Anti-loop: only owner's own messages
     if (!msg.fromMe) return
+    // 2. Chat filter: only listen in selected chat
     if (whatsappChatId && msg.from !== whatsappChatId) return
-    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CMD from=${msg.from} body="${msg.body?.substring(0, 80)}"\n`)
-    await handleMessage(msg)
+
+    const chat = await msg.getChat()
+
+    // 3. Rate limit
+    if (!canRespond(chat.id._serialized)) return
+
+    // 4. Parse command
+    const raw = msg.body.trim()
+    const body = raw.replace(/^[!/]/, '').trim()
+    const [cmd, ...args] = body.split(/\s+/)
+    const cmdLower = (cmd || '').toLowerCase()
+
+    // 5. Group prefix check: in groups, require ! or / prefix
+    if (chat.isGroup && !/^[!/]/.test(raw.trim())) return
+
+    appendFileSync(join(HANGAR_DIR, 'whatsapp-debug.log'), `${new Date().toISOString()} CMD chat=${chat.id._serialized} group=${chat.isGroup} cmd="${cmdLower}" args="${args.join(' ')}"\n`)
+
+    try {
+      await executeCommand(chat, cmdLower, args, raw)
+      markResponded(chat.id._serialized)
+    } catch (e) {
+      console.error('[whatsapp] Command error:', e)
+      await safeSend(chat, `❌ Error: ${e.message}`)
+      markResponded(chat.id._serialized)
+    }
   })
 
   try {
@@ -112,46 +189,130 @@ export async function startWhatsAppBot(port) {
   }
 }
 
-async function handleMessage(msg) {
-  const body = msg.body.trim().toLowerCase()
-  try {
-    if (body === 'status') {
-      const projects = await fetch(`${apiBase}/projects`).then(r => r.json())
-      const lines = projects.map(p => `${p.status === 'running' ? '🟢' : p.status === 'paused' ? '🟡' : '⚪'} ${p.name} (${p.status})`)
-      await msg.reply(lines.join('\n') || 'No projects')
-    } else if (body.startsWith('launch ')) {
-      const parts = body.slice(7).split(' ').filter(Boolean)
-      const name = parts[0]
-      const prompt = parts.slice(1).join(' ')
-      const projects = await fetch(`${apiBase}/projects`).then(r => r.json())
-      const project = projects.find(p => p.name.toLowerCase().includes(name.toLowerCase()))
-      if (!project) return await msg.reply(`Project "${name}" not found`)
-      await fetch(`${apiBase}/projects/${project.id}/start`, {
+// ── Command executor ──
+
+async function executeCommand(chat, cmd, args, raw) {
+  switch (cmd) {
+    case 'status': {
+      const projects = await fetchProjects()
+      const lines = projects.map(p => `${p.status === 'running' ? '🟢' : p.status === 'paused' ? '🟡' : '⚪'} *${p.name}* (${p.status}) ${p.harness || ''} · ${(p.model || '').slice(0, 30)}`)
+      await safeSend(chat, lines.join('\n') || 'No projects')
+      break
+    }
+    case 'projeto':
+    case 'project': {
+      const name = args.join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      await safeSend(chat, `📋 *${p.name}*\nStatus: ${p.status}\nModel: ${p.model}\nHarness: ${p.harness || 'none'}\nPath: ${p.path}`)
+      break
+    }
+    case 'launch': {
+      const name = args[0]
+      const prompt = args.slice(1).join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      await fetch(`${apiBase}/projects/${p.id}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, harness: project.harness || 'omp', model: project.model })
+        body: JSON.stringify({ prompt, harness: p.harness || 'omp', model: p.model })
       })
-      await msg.reply(`▶️ Launched ${project.name}`)
-    } else if (body.startsWith('stop ')) {
-      const name = body.slice(5)
-      const projects = await fetch(`${apiBase}/projects`).then(r => r.json())
-      const project = projects.find(p => p.name.toLowerCase().includes(name.toLowerCase()))
-      if (!project) return await msg.reply(`Project "${name}" not found`)
-      await fetch(`${apiBase}/projects/${project.id}/stop`, { method: 'POST' })
-      await msg.reply(`⏹️ Stopped ${project.name}`)
-    } else if (body.startsWith('artifacts ')) {
-      const name = body.slice(10)
-      const projects = await fetch(`${apiBase}/projects`).then(r => r.json())
-      const project = projects.find(p => p.name.toLowerCase().includes(name.toLowerCase()))
-      if (!project) return await msg.reply(`Project "${name}" not found`)
-      const artifacts = await fetch(`${apiBase}/projects/${project.id}/artifacts`).then(r => r.json())
-      const last2 = (artifacts || []).slice(-2)
-      if (last2.length === 0) return await msg.reply(`No artifacts for ${project.name}`)
-      const text = last2.map(a => `*${a.title}*\n${(a.lines || []).slice(0, 2).join('\n')}`).join('\n\n')
-      await msg.reply(text.slice(0, 2000))
+      await safeSend(chat, `▶️ Launched *${p.name}*`)
+      break
     }
-  } catch (e) {
-    console.error('[whatsapp] Message error:', e.message)
+    case 'stop': {
+      const name = args.join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      await fetch(`${apiBase}/projects/${p.id}/stop`, { method: 'POST' })
+      await safeSend(chat, `⏹️ Stopped *${p.name}*`)
+      break
+    }
+    case 'restart': {
+      const name = args.join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      await fetch(`${apiBase}/projects/${p.id}/stop`, { method: 'POST' })
+      await new Promise(r => setTimeout(r, 1000))
+      await fetch(`${apiBase}/projects/${p.id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ harness: p.harness || 'omp', model: p.model })
+      })
+      await safeSend(chat, `🔄 Restarted *${p.name}*`)
+      break
+    }
+    case 'send': {
+      const name = args[0]
+      const text = args.slice(1).join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      if (!text) return await safeSend(chat, 'Usage: !send <project> <text>')
+      // Inject into PTY via WebSocket-like mechanism — use the backend API
+      await fetch(`${apiBase}/projects/${p.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: text + '\r' })
+      })
+      await safeSend(chat, `📤 Sent to *${p.name}*: "${text}"`)
+      break
+    }
+    case 'logs': {
+      const name = args[0]
+      const n = parseInt(args[1]) || 20
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      const lines = await fetch(`${apiBase}/projects/${p.id}/terminal?lines=${n}`).then(r => r.json())
+      if (!lines || lines.length === 0) return await safeSend(chat, `No terminal output for *${p.name}*`)
+      await safeSend(chat, lines.map((l, i) => `${String(i + 1).padStart(2, ' ')}| ${l}`).join('\n').slice(0, 3800))
+      break
+    }
+    case 'artifacts': {
+      const name = args.join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      const artifacts = await fetch(`${apiBase}/projects/${p.id}/artifacts`).then(r => r.json())
+      const last3 = (artifacts || []).slice(-3)
+      if (last3.length === 0) return await safeSend(chat, `No artifacts for *${p.name}*`)
+      const text = last3.map(a => `*${a.title}*\n${(a.lines || []).slice(0, 3).join('\n')}`).join('\n\n───\n\n')
+      await safeSend(chat, text.slice(0, 3800))
+      break
+    }
+    case 'comment': {
+      const name = args[0]
+      const lineIndex = parseInt(args[1])
+      const text = args.slice(2).join(' ')
+      const p = await findProject(name)
+      if (!p || isNaN(lineIndex) || !text) return await safeSend(chat, 'Usage: !comment <project> <lineIndex> <text>')
+      const artifacts = await fetch(`${apiBase}/projects/${p.id}/artifacts`).then(r => r.json())
+      const a = artifacts[artifacts.length - 1]
+      if (!a) return await safeSend(chat, `No artifacts for *${p.name}*`)
+      await fetch(`${apiBase}/projects/${p.id}/artifacts/${a.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lineIndex, text })
+      })
+      await safeSend(chat, `💬 Commented on *${p.name}* line ${lineIndex}: "${text}"`)
+      break
+    }
+    case 'screenshot':
+    case 'screen': {
+      const name = args.join(' ')
+      const p = await findProject(name)
+      if (!p) return await safeSend(chat, `Project "${name}" not found`)
+      const data = await fetch(`${apiBase}/projects/${p.id}/terminal?lines=25`).then(r => r.json())
+      const lines = data || []
+      const framed = '┌' + '─'.repeat(60) + '┐\n' +
+        lines.map(l => `│ ${(l || '').replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').slice(0, 58).padEnd(58)} │`).join('\n') +
+        '\n└' + '─'.repeat(60) + '┘'
+      await safeSend(chat, `📸 *${p.name}* terminal:\n\`\`\`\n${framed.slice(0, 3800)}\n\`\`\``)
+      break
+    }
+    case 'help':
+    case '?':
+    default:
+      await safeSend(chat, HELP_TEXT)
+      break
   }
 }
 
@@ -162,11 +323,9 @@ export function stopWhatsAppBot() {
   }
 }
 
-// WhatsApp notifications
 export async function notifyWhatsApp(projectName, type) {
   const auth = loadAuth()
   if (!auth?.whatsappEnabled || !client?.info?.wid) return
-  const phone = authorizedPhone + '@c.us'
   try {
     const contact = await client.getNumberId(authorizedPhone)
     if (!contact) return
