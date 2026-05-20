@@ -1,4 +1,5 @@
 import { spawn } from 'node-pty'
+import { ArtifactParser } from './artifact-parser.js'
 import { EventEmitter } from 'events'
 import os from 'os'
 import { homedir } from 'os'
@@ -20,6 +21,7 @@ class SessionManager extends EventEmitter {
     super()
     this.sessions = new Map() // id → { pty, clients: Set<WebSocket>, buffer: string[] }
   }
+  getSession(id) { return this.sessions.get(id) }
 
   start(project, promptText) {
     if (this.sessions.has(project.id)) this.stop(project.id)
@@ -51,6 +53,12 @@ class SessionManager extends EventEmitter {
     }
 
     const session = { pty: ptyProcess, clients: new Set(), buffer: [] }
+  const parser = new ArtifactParser(
+    project.id,
+    (artifact) => this.emit('artifact', project.id, artifact),
+    (artifactId, artifact) => this.emit('artifact-update', project.id, artifactId, artifact)
+  )
+  session.parser = parser
     this.sessions.set(project.id, session)
 
     // Se tiver prompt inicial, envia após 4s
@@ -68,11 +76,13 @@ class SessionManager extends EventEmitter {
       for (const ws of session.clients) {
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', data }))
       }
+      session.parser.push(data)
     })
 
     ptyProcess.onExit(({ exitCode }) => {
       this.sessions.delete(project.id)
       const status = exitCode === 0 ? 'done' : 'paused'
+      session.parser.flush()
       this.emit('status', project.id, status)
       for (const ws of session.clients) {
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', exitCode, status }))
@@ -103,6 +113,7 @@ class SessionManager extends EventEmitter {
     const s = this.sessions.get(id)
     if (!s) return
     try { s.pty.kill() } catch {}
+    if (s.parser) s.parser.flush()
     this.sessions.delete(id)
     this.emit('status', id, 'idle')
   }
