@@ -5,3 +5,8 @@ node_modules/
 *.jpg
 dist/
 .port
+
+.env
+.DS_Store
+Thumbs.db
+*.tmp
