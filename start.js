@@ -1,56 +1,88 @@
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
+import { networkInterfaces } from 'os'
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
+import path from 'path'
 import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
-import { readFileSync, existsSync } from 'fs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const BACKEND_DIR = join(__dirname, 'backend')
-const FRONTEND_DIR = join(__dirname, 'frontend')
-const PORT_FILE = join(__dirname, '.port')
-const isWindows = process.platform === 'win32'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const useTunnel = process.argv.includes('--tunnel')
+const isDev = process.argv.includes('--dev')
+const PORT = process.env.PORT || '3333'
 
-function run(cmd, args, cwd, env) {
-  const p = spawn(cmd, args, {
-    cwd,
-    stdio: 'inherit',
-    shell: isWindows,
-    env: { ...process.env, FORCE_COLOR: '1', ...env },
-  })
-  p.on('error', (err) => {
-    console.error(`[${cmd}] Failed: ${err.message}`)
-  })
-  return p
+function getLanIP() {
+  for (const ifaces of Object.values(networkInterfaces())) {
+    for (const i of ifaces) {
+      if (i.family === 'IPv4' && !i.internal) return i.address
+    }
+  }
+  return 'localhost'
 }
 
-console.log('Hangar starting...')
+const lanIP = getLanIP()
 
-const backend = run('node', ['--watch', 'index.js'], BACKEND_DIR)
+console.log('✈️  Hangar starting...')
 
-let frontend = null
+// Build frontend if not built
+const distPath = path.join(__dirname, 'frontend', 'dist', 'index.html')
+if (!existsSync(distPath)) {
+  console.log('📦  Building frontend...')
+  execSync('npm run build', { stdio: 'inherit', cwd: __dirname })
+}
 
-// Poll for .port file written by backend once it finds an available port
-const poll = setInterval(() => {
-  if (frontend) { clearInterval(poll); return }
-  try {
-    if (existsSync(PORT_FILE)) {
-      const port = readFileSync(PORT_FILE, 'utf8').trim()
-      if (port) {
-        clearInterval(poll)
-        console.log(`Backend running on port ${port}`)
-        frontend = run('npm', ['run', 'dev'], FRONTEND_DIR, {
-          VITE_API_PORT: port,
-        })
+// Start backend
+const backendArgs = isDev ? ['--watch', 'backend/index.js'] : ['backend/index.js']
+const backend = spawn('node', backendArgs, {
+  stdio: 'inherit',
+  cwd: __dirname,
+  env: { ...process.env, PORT }
+})
+
+backend.on('exit', (code) => {
+  if (code !== 0 && code !== null) console.error('Backend exited with code', code)
+  process.exit(code || 0)
+})
+
+// Print access info after backend is up
+setTimeout(() => {
+  console.log('')
+  console.log('──────────────────────────────')
+  console.log(`📡  Local:  http://localhost:${PORT}`)
+  console.log(`📡  LAN:    http://${lanIP}:${PORT}`)
+  if (useTunnel) console.log('🌐  Tunnel: starting...')
+  console.log('──────────────────────────────')
+}, 2000)
+
+// Cloudflare tunnel
+if (useTunnel) {
+  import('cloudflared').then(({ bin }) => {
+    const tunnel = spawn(bin, ['tunnel', '--url', `http://localhost:${PORT}`], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    const capture = (data) => {
+      const str = data.toString()
+      const match = str.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)
+      if (match) {
+        const url = match[0]
+        let token = ''
+        const authPath = path.join(process.env.HOME || process.env.USERPROFILE, '.hangar', 'auth.json')
+        if (existsSync(authPath)) {
+          try { token = JSON.parse(readFileSync(authPath, 'utf8')).token || '' } catch {}
+        }
+        const publicUrl = token ? `${url}?token=${token}` : url
+        console.log(`\n🌐  Public: ${publicUrl}`)
+        import('qrcode-terminal').then(({ default: qr }) => {
+          qr.generate(publicUrl, { small: true })
+        }).catch(() => {})
+        const hangarDir = path.join(process.env.HOME || process.env.USERPROFILE, '.hangar')
+        mkdirSync(hangarDir, { recursive: true })
+        writeFileSync(path.join(hangarDir, 'tunnel.json'), JSON.stringify({ url, publicUrl, active: true }))
       }
     }
-  } catch {}
-}, 300)
-
-function cleanup() {
-  clearInterval(poll)
-  backend.kill('SIGTERM')
-  if (frontend) frontend.kill('SIGTERM')
-  process.exit(0)
+    tunnel.stdout.on('data', capture)
+    tunnel.stderr.on('data', capture)
+    process.on('exit', () => { try { tunnel.kill() } catch {} })
+  }).catch(() => console.error('cloudflared not installed. Run: npm install cloudflared -D'))
 }
 
-process.on('SIGINT', cleanup)
-process.on('SIGTERM', cleanup)
+process.on('SIGINT', () => { backend.kill(); process.exit(0) })
+process.on('SIGTERM', () => { backend.kill(); process.exit(0) })

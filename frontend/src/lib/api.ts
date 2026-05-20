@@ -67,6 +67,10 @@ export const api = {
     fetch(BASE + '/projects/' + id + '/feedback', { method: 'POST' }).then((r) => r.json()),
   getPendingCommentCounts: () =>
     fetch(BASE + '/projects/pending-comment-counts').then((r) => r.json()) as Promise<Record<string, number>>,
+
+  getTunnel: () => fetch(BASE + '/tunnel').then(r => r.json()),
+  getAuthToken: () => fetch(BASE + '/auth/token').then(r => r.json()),
+  regenerateToken: () => fetch(BASE + '/auth/token', { method: 'PUT' }).then(r => r.json()),
 }
 
 

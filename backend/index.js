@@ -1,14 +1,45 @@
 import express from 'express'
+import { networkInterfaces } from 'os'
+
+function getLanIP() {
+  for (const ifaces of Object.values(networkInterfaces())) {
+    for (const i of ifaces) {
+      if (i.family === 'IPv4' && !i.internal) return i.address
+    }
+  }
+  return 'localhost'
+}
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import cors from 'cors'
 import { store } from './project-store.js'
 import { manager } from './session-manager.js'
 import { detectHarnesses, readModels } from './harness-detector.js'
-import { existsSync, writeFileSync, readFileSync, createReadStream } from 'fs'
+import { existsSync, writeFileSync, readFileSync, createReadStream, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
+import { randomUUID } from 'crypto'
+
+// Auth: generate token on first startup
+const HANGAR_DIR = join(homedir(), '.hangar')
+const AUTH_PATH = join(HANGAR_DIR, 'auth.json')
+mkdirSync(HANGAR_DIR, { recursive: true })
+let auth = { token: '' }
+if (existsSync(AUTH_PATH)) {
+  try { auth = JSON.parse(readFileSync(AUTH_PATH, 'utf8')) } catch {}
+}
+if (!auth.token) {
+  auth.token = randomUUID()
+  writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
+}
+
+// Auth middleware: token required for external IPs
+const isLocalIP = (ip) => {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' ||
+    /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
+}
+
 
 
 // Reset any stale "running" statuses from previous crashes
@@ -17,11 +48,21 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+// Auth middleware: token required for external IPs
+app.use('/api', (req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || ''
+  if (isLocalIP(ip)) return next()
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token
+  if (token === auth.token) return next()
+  if (req.path === '/tunnel' && req.method === 'GET') return next()
+  res.status(401).json({ error: 'unauthorized' })
+})
+
 // Harnesses e models
 app.get('/api/harnesses', (_, res) => res.json(detectHarnesses()))
 app.get('/api/models', (_, res) => res.json(readModels()))
 // Config
-app.get('/api/config', (_, res) => res.json({ homeDir: homedir() }))
+app.get('/api/config', (_, res) => res.json({ homeDir: homedir(), lanIP: getLanIP() }))
 
 // Projects CRUD
 app.get('/api/projects', (_, res) => res.json(store.list()))
@@ -137,6 +178,25 @@ app.get('/api/projects/pending-comment-counts', (_, res) => {
     }
   }
   res.json(counts)
+})
+
+// Tunnel status
+app.get('/api/tunnel', (_, res) => {
+  const tp = join(HANGAR_DIR, 'tunnel.json')
+  if (existsSync(tp)) {
+    try { return res.json(JSON.parse(readFileSync(tp, 'utf8'))) } catch {}
+  }
+  res.json({ url: null, publicUrl: null, active: false })
+})
+
+// Auth: get token
+app.get('/api/auth/token', (_, res) => res.json({ token: auth.token }))
+
+// Auth: regenerate token
+app.put('/api/auth/token', (_, res) => {
+  auth.token = randomUUID()
+  writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2))
+  res.json({ token: auth.token })
 })
 // SSE global — status updates
 const sseClients = new Set()

@@ -12,10 +12,15 @@
     "frontend/dist/"
   ],
   "scripts": {
-    "dev": "node start.js",
+    "start": "node start.js",
+    "start:public": "node start.js --tunnel",
+    "dev": "node start.js --dev",
     "build": "cd frontend && npm run build",
-    "start": "node cli.js",
-    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "setup": "npm install && npm install --prefix backend && npm install --prefix frontend && npm run build",
     "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "cloudflared": "^0.7.1",
+    "qrcode-terminal": "^0.12.0"
   }
 }
