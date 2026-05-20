@@ -19,9 +19,27 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { toast } from 'sonner'
 import { api, type Harness, type ModelInfo, type Project } from '@/lib/api'
 import { useSSE } from '@/lib/useSSE'
+
+function Hint({ open, onOpenChange, title, children }: { open: boolean; onOpenChange: (v: boolean) => void; title: string; children: React.ReactNode }) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground pt-2 w-full text-left">
+        <span className="text-base">{open ? '\u25BC' : '\u25B6'}</span> {title}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2 space-y-1.5 text-xs text-muted-foreground border-t mt-2 ml-5 pl-3 border-l-2 border-l-muted">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 export function SettingsView() {
   const [defaultHarness, setDefaultHarness] = useState('omp')
@@ -34,21 +52,22 @@ export function SettingsView() {
   const [homeDir, setHomeDir] = useState('')
   const [lanIP, setLanIP] = useState('')
 
-  // Access section
   const [token, setToken] = useState('')
   const [tunnelUrl, setTunnelUrl] = useState('')
   const [tunnelActive, setTunnelActive] = useState(false)
 
-  // Discord section
   const [discordToken, setDiscordToken] = useState('')
   const [discordChannelId, setDiscordChannelId] = useState('')
   const [discordEnabled, setDiscordEnabled] = useState(false)
 
-  // WhatsApp section
   const [whatsappEnabled, setWhatsappEnabled] = useState(false)
   const [whatsappPhone, setWhatsappPhone] = useState('')
   const [whatsappQR, setWhatsappQR] = useState('')
   const [whatsappStatus, setWhatsappStatus] = useState('disconnected')
+
+  const [hintTunnel, setHintTunnel] = useState(false)
+  const [hintDiscord, setHintDiscord] = useState(false)
+  const [hintWhatsApp, setHintWhatsApp] = useState(false)
 
   useEffect(() => {
     fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/config`)
@@ -72,7 +91,6 @@ export function SettingsView() {
       .then(r => r.json()).then(d => { if (d.qr) setWhatsappQR(d.qr) }).catch(() => {})
   }, [])
 
-  // Watches SSE for whatsapp QR updates
   useSSE(() => {})
 
   useEffect(() => {
@@ -89,24 +107,11 @@ export function SettingsView() {
   }, [])
 
   const save = () => {
-    localStorage.setItem(
-      'hangar-settings',
-      JSON.stringify({ defaultHarness, defaultModel, port: Number(port), defaultPath })
-    )
+    localStorage.setItem('hangar-settings', JSON.stringify({ defaultHarness, defaultModel, port: Number(port), defaultPath }))
     toast.success('Settings saved')
   }
-
-  const copyToken = () => {
-    navigator.clipboard.writeText(token)
-    toast.success('Token copied')
-  }
-
-  const regenerateToken = async () => {
-    const d = await api.regenerateToken()
-    setToken(d.token)
-    toast.success('Token regenerated')
-  }
-
+  const copyToken = () => { navigator.clipboard.writeText(token); toast.success('Token copied') }
+  const regenerateToken = async () => { const d = await api.regenerateToken(); setToken(d.token); toast.success('Token regenerated') }
   const availableHarnesses = harnesses.filter((h) => h.available)
 
   return (
@@ -124,9 +129,7 @@ export function SettingsView() {
             <Select value={defaultHarness} onValueChange={setDefaultHarness}>
               <SelectTrigger id='harness'><SelectValue /></SelectTrigger>
               <SelectContent>
-                {availableHarnesses.map((h) => (
-                  <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
-                ))}
+                {availableHarnesses.map((h) => (<SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>))}
               </SelectContent>
             </Select>
           </div>
@@ -135,9 +138,7 @@ export function SettingsView() {
             <Select value={defaultModel} onValueChange={setDefaultModel}>
               <SelectTrigger id='model'><SelectValue placeholder='Select a model' /></SelectTrigger>
               <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                ))}
+                {models.map((m) => (<SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>))}
               </SelectContent>
             </Select>
           </div>
@@ -154,7 +155,7 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
-      {/* Access section */}
+      {/* Access */}
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
@@ -163,7 +164,7 @@ export function SettingsView() {
               {tunnelActive ? '\uD83C\uDF10 Public' : '\uD83D\uDCE1 LAN'}
             </Badge>
           </CardTitle>
-          <CardDescription>Remote access via Cloudflare Tunnel.</CardDescription>
+          <CardDescription>Remote access via Cloudflare Tunnel (no account needed). Run <code className='bg-muted px-1 rounded text-xs'>npm run start:public</code></CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
           <div className='grid gap-2'>
@@ -177,9 +178,7 @@ export function SettingsView() {
               <Button size='sm' variant='outline' onClick={copyToken}>Copy</Button>
               <Button size='sm' variant='outline' onClick={regenerateToken}>Regenerate</Button>
             </div>
-            <p className='text-xs text-muted-foreground'>
-              Required for access via public URL. Not needed on LAN.
-            </p>
+            <p className='text-xs text-muted-foreground'>Required for public URL access. Append <code className='bg-muted px-1 rounded text-[11px]'>?token=...</code> to the URL.</p>
           </div>
           {tunnelActive && tunnelUrl && (
             <div className='grid gap-2'>
@@ -187,10 +186,19 @@ export function SettingsView() {
               <Input value={tunnelUrl} readOnly className='font-mono text-xs' />
             </div>
           )}
+          <Hint open={hintTunnel} onOpenChange={setHintTunnel} title="How to set up Cloudflare Tunnel">
+            <p><strong>1.</strong> No account or API key needed — Cloudflare Tunnel is bundled via <code className='bg-muted px-1 rounded'>cloudflared</code>.</p>
+            <p><strong>2.</strong> Stop Hangar, then run: <code className='bg-muted px-1 rounded'>npm run start:public</code></p>
+            <p><strong>3.</strong> A <code className='bg-muted px-1 rounded'>https://xxx.trycloudflare.com</code> URL + QR code appears in the terminal.</p>
+            <p><strong>4.</strong> Copy the URL. Append <code className='bg-muted px-1 rounded'>?token=YOUR_TOKEN</code> (copy from Auth Token above).</p>
+            <p><strong>5.</strong> Share the full URL. Anyone with the link + token can access Hangar.</p>
+            <p><strong>6.</strong> Scan the terminal QR code with your phone camera for instant mobile access.</p>
+            <p className='pt-1'>Docs: <a href='https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/' target='_blank' rel='noopener' className='underline text-blue-400'>Cloudflare Tunnel docs</a></p>
+          </Hint>
         </CardContent>
       </Card>
 
-      {/* Discord section */}
+      {/* Discord */}
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
@@ -219,10 +227,23 @@ export function SettingsView() {
               <Button onClick={() => toast.success('Discord settings saved to auth.json')}>Save Discord</Button>
             </>
           )}
+          <Hint open={hintDiscord} onOpenChange={setHintDiscord} title="How to create a Discord Bot">
+            <p><strong>1.</strong> Go to <a href='https://discord.com/developers/applications' target='_blank' rel='noopener' className='underline text-blue-400'>discord.com/developers/applications</a></p>
+            <p><strong>2.</strong> Click <strong>New Application</strong> → name it "Hangar".</p>
+            <p><strong>3.</strong> Go to <strong>Bot</strong> tab → click <strong>Add Bot</strong>.</p>
+            <p><strong>4.</strong> Click <strong>Reset Token</strong> → copy the token → paste in <strong>Bot Token</strong> above.</p>
+            <p><strong>5.</strong> Under <strong>Privileged Gateway Intents</strong>, enable <strong>Message Content Intent</strong>.</p>
+            <p><strong>6.</strong> Go to <strong>OAuth2 → URL Generator</strong>. Check <strong>bot</strong> + <strong>applications.commands</strong>. Copy the generated URL.</p>
+            <p><strong>7.</strong> Open the URL in your browser → invite the bot to your server.</p>
+            <p><strong>8.</strong> In Discord: right-click your target channel → <strong>Copy Channel ID</strong> → paste in <strong>Channel ID</strong> above.</p>
+            <p><strong>9.</strong> Enable <strong>Developer Mode</strong> in Discord Settings → Advanced if you don't see "Copy ID".</p>
+            <p><strong>10.</strong> Click <strong>Save Discord</strong>. Restart Hangar. Use <code className='bg-muted px-1 rounded'>/status</code> in Discord.</p>
+            <p className='pt-1'>Docs: <a href='https://discordjs.guide/preparations/setting-up-a-bot-application.html' target='_blank' rel='noopener' className='underline text-blue-400'>discord.js setup guide</a></p>
+          </Hint>
         </CardContent>
       </Card>
 
-      {/* WhatsApp section */}
+      {/* WhatsApp */}
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
@@ -231,7 +252,7 @@ export function SettingsView() {
               {whatsappStatus === 'online' ? '\uD83D\uDCF1 Online' : 'Offline'}
             </Badge>
           </CardTitle>
-          <CardDescription>Control your agents from WhatsApp.</CardDescription>
+          <CardDescription>Control your agents from WhatsApp. Commands: status, launch, stop, artifacts.</CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
           <div className='flex items-center justify-between'>
@@ -254,10 +275,21 @@ export function SettingsView() {
               <Button onClick={() => toast.success('WhatsApp settings saved to auth.json')}>Save WhatsApp</Button>
             </>
           )}
+          <Hint open={hintWhatsApp} onOpenChange={setHintWhatsApp} title="How to set up WhatsApp Bot">
+            <p><strong>1.</strong> No paid API needed — uses <code className='bg-muted px-1 rounded'>whatsapp-web.js</code> (WhatsApp Web).</p>
+            <p><strong>2.</strong> Enter your phone number with country code (e.g. <code className='bg-muted px-1 rounded'>5511999999999</code>).</p>
+            <p><strong>3.</strong> Click <strong>Save WhatsApp</strong> and restart Hangar.</p>
+            <p><strong>4.</strong> A QR code will appear above — scan it with your phone.</p>
+            <p><strong>5.</strong> On your phone: <strong>WhatsApp → Settings → Linked Devices → Link a Device</strong>.</p>
+            <p><strong>6.</strong> Once connected, send <code className='bg-muted px-1 rounded'>status</code> to your Hangar WhatsApp number to test.</p>
+            <p><strong>7.</strong> Commands: <code className='bg-muted px-1 rounded'>status</code>, <code className='bg-muted px-1 rounded'>launch project_name prompt</code>, <code className='bg-muted px-1 rounded'>stop project_name</code>, <code className='bg-muted px-1 rounded'>artifacts project_name</code>.</p>
+            <p><strong>Note:</strong> Keep your phone connected to the internet. WhatsApp Web mirrors your phone.</p>
+            <p className='pt-1'>Docs: <a href='https://wwebjs.dev/guide/' target='_blank' rel='noopener' className='underline text-blue-400'>whatsapp-web.js guide</a></p>
+          </Hint>
         </CardContent>
       </Card>
 
-      {/* Archive section */}
+      {/* Archive */}
       <Card>
         <CardHeader>
           <CardTitle>Archive</CardTitle>
