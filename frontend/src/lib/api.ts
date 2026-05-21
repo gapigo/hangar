@@ -11,7 +11,7 @@ export const api = {
       .then((data) => (Array.isArray(data) ? data : data.models || [])) as Promise<ModelInfo[]>,
 
   getProjects: () =>
-    fetch(BASE + '/projects').then((r) => r.json()) as Promise<Project[]>,
+    fetch(BASE + '/projects').then((r) => r.json()).then(data => Array.isArray(data) ? data : []) as Promise<Project[]>,
 
   createProject: (data: { name: string; path: string; model: string; harness?: string }) =>
     fetch(BASE + '/projects', {
