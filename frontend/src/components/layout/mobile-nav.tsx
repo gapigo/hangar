@@ -13,7 +13,7 @@ export function MobileNav() {
   const pathname = window.location.pathname
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t flex md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-[60] bg-background border-t flex md:hidden">
       {items.map(({ icon: Icon, label, to }) => {
         const active = pathname === to || (to !== '/' && pathname.startsWith(to))
         return (
