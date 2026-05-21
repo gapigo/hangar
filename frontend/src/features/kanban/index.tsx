@@ -3,7 +3,8 @@ import {
   DndContext,
   closestCorners,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragOverlay,
@@ -147,7 +148,10 @@ export function KanbanView() {
   )
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
@@ -239,6 +243,17 @@ export function KanbanView() {
       .catch(() => {
         setLaunching(false)
       })
+  }
+
+  const handleMobileLaunch = (project: Project) => {
+    setLaunchProject(project)
+    setLaunchPrompt(project.lastPrompt || '')
+    setLaunchHarness(project.lastHarness || project.harness || 'omp')
+    setLaunchModel(project.lastModel || project.model || '')
+  }
+
+  const handleMobileStop = (id: string) => {
+    api.stopProject(id).then(() => refresh())
   }
 
   const createProject = () => {
@@ -459,6 +474,8 @@ export function KanbanView() {
               onDelete={(p) => setDeleteConfirm(p)}
               activeId={activeId}
               pendingCounts={pendingCounts}
+              onLaunch={handleMobileLaunch}
+              onStop={handleMobileStop}
             />
           ))}
         </div>
@@ -468,6 +485,8 @@ export function KanbanView() {
               project={projects.find((p) => p.id === activeId)!}
               onArchive={() => {}}
               onDelete={() => {}}
+              onLaunch={() => {}}
+              onStop={() => {}}
             />
           ) : null}
         </DragOverlay>
@@ -483,6 +502,8 @@ function KanbanColumn({
   onDelete,
   activeId,
   pendingCounts,
+  onLaunch,
+  onStop,
 }: {
   col: (typeof COLUMNS)[number]
   projects: Project[]
@@ -490,6 +511,8 @@ function KanbanColumn({
   onDelete: (p: Project) => void
   activeId: string | null
   pendingCounts: Record<string, number>
+  onLaunch: (p: Project) => void
+  onStop: (id: string) => void
 }) {
   const { setNodeRef } = useSortable({ id: col.id, data: { type: 'column', columnId: col.id } })
 
@@ -523,6 +546,8 @@ function KanbanColumn({
                 onDelete={onDelete}
                 isOverlay={activeId === project.id}
                 pendingCount={pendingCounts[project.id] || 0}
+                onLaunch={onLaunch}
+                onStop={onStop}
               />
             ))}
           </div>
@@ -538,12 +563,16 @@ function SortableProjectCard({
   onDelete,
   isOverlay,
   pendingCount,
+  onLaunch,
+  onStop,
 }: {
   project: Project
   onArchive: (p: Project) => void
   onDelete: (p: Project) => void
   isOverlay?: boolean
   pendingCount?: number
+  onLaunch: (p: Project) => void
+  onStop: (id: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: project.id,
@@ -561,6 +590,8 @@ function SortableProjectCard({
         onDelete={onDelete}
         className={isOverlay ? 'opacity-80 shadow-lg' : ''}
         pendingCount={pendingCount}
+        onLaunch={onLaunch}
+        onStop={onStop}
       />
     </div>
   )
@@ -572,12 +603,16 @@ function ProjectCard({
   onDelete,
   className,
   pendingCount,
+  onLaunch,
+  onStop,
 }: {
   project: Project
   onArchive: (p: Project) => void
   onDelete: (p: Project) => void
   className?: string
   pendingCount?: number
+  onLaunch: (p: Project) => void
+  onStop: (id: string) => void
 }) {
   const navigate = useNavigate()
 
@@ -664,6 +699,21 @@ function ProjectCard({
           )}
         </div>
       </CardContent>
+        {/* Quick action buttons — mobile only */}
+        <div className="flex md:hidden justify-end px-6 pb-3 pt-0 gap-2">
+          {(project.status === 'idle' || project.status === 'paused' || project.status === 'done') && (
+            <Button size="sm" variant="outline" className="text-xs h-7"
+              onClick={(e) => { e.stopPropagation(); onLaunch(project) }}>
+              ▶ Launch
+            </Button>
+          )}
+          {project.status === 'running' && (
+            <Button size="sm" variant="outline" className="text-xs h-7"
+              onClick={(e) => { e.stopPropagation(); onStop(project.id) }}>
+              ⏹ Stop
+            </Button>
+          )}
+        </div>
     </Card>
   )
 }
