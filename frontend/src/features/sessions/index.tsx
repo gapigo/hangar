@@ -136,6 +136,8 @@ export function SessionView() {
           const clean = msg.data
             .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
             .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '')
+            .replace(/\x1B\(./g, '')
+            .replace(/[\x00-\x08\x0e-\x1f]/g, '')
           const newLines = clean.split('\n').filter((l: string) => l.length > 0)
           if (newLines.length > 0) {
             setMobileLines(prev => {
@@ -234,7 +236,7 @@ export function SessionView() {
   return (
     <div className='flex h-full'>
       {/* Left sidebar - project switcher */}
-      <div className='flex w-[240px] flex-col border-r bg-muted/30'>
+      <div className='hidden md:flex w-[240px] flex-col border-r bg-muted/30'>
         <div className='border-b p-3'>
           <h2 className='text-sm font-semibold'>Sessions</h2>
         </div>
@@ -443,14 +445,14 @@ function MobileTerminal({
       {/* Output area */}
       <div
         ref={logRef}
-        className="flex-1 overflow-y-auto bg-black p-3 font-mono text-[11px] leading-5"
+        className="flex-1 overflow-y-auto overflow-x-hidden bg-black p-3 font-mono text-[11px] leading-5"
         onScroll={(e) => {
           const el = e.currentTarget
           const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
           setAutoScroll(atBottom)
         }}>
         {lines.map((line, i) => (
-          <div key={i} className="whitespace-pre-wrap break-all text-green-300">
+          <div key={i} className="whitespace-pre-wrap break-words text-gray-200 leading-5">
             {line || '\u00A0'}
           </div>
         ))}
