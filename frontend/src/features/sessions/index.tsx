@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -39,6 +40,7 @@ export function SessionView() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const isMobile = useIsMobile()
+  const mobileInputRef = useRef<HTMLInputElement>(null)
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -117,7 +119,7 @@ export function SessionView() {
     })
     terminalRef.current = term
 
-    const wsUrl = `ws://localhost:${import.meta.env.VITE_API_PORT || '3333'}/sessions/${id}`
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/sessions/${id}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -326,30 +328,68 @@ export function SessionView() {
         )}
 
         {/* Split container */}
-        <div className={cn(
-          'flex gap-0 flex-1 overflow-hidden',
-          isMobile && 'flex-col'
-        )}>
-          <div className={cn(
-            'flex-1 min-w-0 flex flex-col',
-            showArtifacts && !isMobile && 'w-1/2 flex-none'
-          )}>
-            {/* Terminal container */}
-            <div
-              ref={termRef}
-              className='flex-1 min-h-0 relative'
-              style={{ padding: '4px', background: '#09090b' }}
-            />
-          </div>
-          {showArtifacts && (
-            <div className={cn(
-              'overflow-y-auto border-l border-border',
-              isMobile ? 'h-64' : 'w-1/2'
-            )}>
+        {isMobile ? (
+          <Tabs defaultValue="terminal" className="flex flex-col flex-1 overflow-hidden">
+            <TabsList className="mx-2 mt-1 shrink-0">
+              <TabsTrigger value="terminal" className="flex-1">Terminal</TabsTrigger>
+              <TabsTrigger value="artifacts" className="flex-1">
+                Artifacts
+                {pendingCount > 0 && (
+                  <Badge className="ml-1 bg-yellow-400 text-black text-[10px]">{pendingCount}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="terminal" className="flex-1 overflow-hidden m-0">
+              <input
+                ref={mobileInputRef}
+                className="opacity-0 absolute w-0 h-0"
+                onInput={(e) => {
+                  const val = (e.target as HTMLInputElement).value
+                  if (val && wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(val)
+                    ;(e.target as HTMLInputElement).value = ''
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (wsRef.current?.readyState !== WebSocket.OPEN) return
+                  if (e.key === 'Enter') wsRef.current.send('\r')
+                  if (e.key === 'Backspace') wsRef.current.send('\x7f')
+                }}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+              <div
+                ref={termRef}
+                className="flex-1 min-h-0 relative"
+                style={{ padding: '4px', background: '#09090b' }}
+                onClick={() => mobileInputRef.current?.focus()}
+              />
+            </TabsContent>
+            <TabsContent value="artifacts" className="flex-1 overflow-y-auto m-0">
               <ArtifactsPanel projectId={id} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <>
+            <div className={cn(
+              'flex-1 min-w-0 flex flex-col',
+              showArtifacts && 'w-1/2 flex-none'
+            )}>
+              <div
+                ref={termRef}
+                className="flex-1 min-h-0 relative"
+                style={{ padding: '4px', background: '#09090b' }}
+              />
             </div>
-          )}
-        </div>
+            {showArtifacts && (
+              <div className="overflow-y-auto border-l border-border w-1/2">
+                <ArtifactsPanel projectId={id} />
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
