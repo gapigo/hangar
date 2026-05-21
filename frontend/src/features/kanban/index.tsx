@@ -116,7 +116,7 @@ export function KanbanView() {
 
   // Load config and saved settings
   useEffect(() => {
-    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/config`)
+    fetch(`${window.location.origin}/api/config`)
       .then((r) => r.json())
       .then((c) => setHomeDir(c.homeDir || ''))
       .catch(() => {})
@@ -449,7 +449,7 @@ export function KanbanView() {
         onDragStart={(e) => setActiveId(e.active.id as string)}
         onDragEnd={handleDragEnd}
       >
-        <div className='grid flex-1 grid-cols-4 gap-4 min-w-0 overflow-hidden'>
+        <div className='flex flex-1 gap-3 overflow-x-auto pb-4 snap-x snap-mandatory px-1 md:grid md:grid-cols-4 md:gap-4 md:overflow-hidden md:pb-0 md:snap-none'>
           {COLUMNS.map((col) => (
             <KanbanColumn
               key={col.id}
@@ -494,7 +494,7 @@ function KanbanColumn({
   const { setNodeRef } = useSortable({ id: col.id, data: { type: 'column', columnId: col.id } })
 
   return (
-    <div ref={setNodeRef} className='flex flex-col gap-2 min-w-0 w-full overflow-hidden'>
+    <div ref={setNodeRef} className='flex flex-col gap-2 w-[280px] flex-none snap-start overflow-hidden md:w-auto'>
       <div className='flex items-center gap-2 px-1'>
         <div
           className={`h-2 w-2 rounded-full ${
