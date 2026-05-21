@@ -38,8 +38,16 @@ if (!auth.token) {
 
 // Auth middleware: token required for external IPs
 const isLocalIP = (ip) => {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' ||
-    /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
+  // Strip IPv4-mapped IPv6 prefix (::ffff:192.168.x.x → 192.168.x.x)
+  const addr = (ip || '').replace(/^::ffff:/, '')
+  return (
+    addr === '127.0.0.1' ||
+    addr === '::1' ||
+    addr === 'localhost' ||
+    /^192\.168\./.test(addr) ||
+    /^10\./.test(addr) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(addr)
+  )
 }
 
 
