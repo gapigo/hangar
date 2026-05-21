@@ -700,7 +700,7 @@ function ProjectCard({
         </div>
       </CardContent>
         {/* Quick action buttons — mobile only */}
-        <div className="flex md:hidden justify-end px-6 pb-3 pt-0 gap-2">
+        <div className="flex md:hidden justify-end mt-2 pt-2 border-t border-border/50 px-6 pb-3 gap-2">
           {(project.status === 'idle' || project.status === 'paused' || project.status === 'done') && (
             <Button size="sm" variant="outline" className="text-xs h-7"
               onClick={(e) => { e.stopPropagation(); onLaunch(project) }}>
