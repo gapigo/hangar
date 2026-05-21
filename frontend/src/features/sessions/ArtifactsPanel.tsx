@@ -76,7 +76,7 @@ function LineWithComment({
   }
 
   const resolve = async (commentId: string) => {
-    await fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/projects/${projectId}/artifacts/${artifactId}/comments/${commentId}/resolve`, { method: 'POST' })
+    await fetch(`${window.location.origin}/api/projects/${projectId}/artifacts/${artifactId}/comments/${commentId}/resolve`, { method: 'POST' })
   }
 
   const pendingCount = comments?.filter((c) => !c.resolved).length || 0

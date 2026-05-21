@@ -1,5 +1,5 @@
-const PORT = import.meta.env.VITE_API_PORT || '3333'
-const BASE = `http://localhost:${PORT}/api`
+// Dynamic base URL: works on localhost, LAN IP, or Cloudflare tunnel
+const BASE = `${window.location.protocol}//${window.location.host}/api`
 
 export const api = {
   getHarnesses: () =>
@@ -70,6 +70,7 @@ export const api = {
 
   getTunnel: () => fetch(BASE + '/tunnel').then(r => r.json()),
   getAuthToken: () => fetch(BASE + '/auth/token').then(r => r.json()),
+  getTunnelQR: () => fetch(BASE + '/tunnel/qr').then(r => r.json()),
 
   getAuthStatus: () => fetch(BASE + '/auth/status').then(r => r.json()),
   saveDiscord: (data: Record<string, unknown>) => fetch(BASE + '/auth/discord', { method: 'PUT', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } }).then(r => r.json()),
