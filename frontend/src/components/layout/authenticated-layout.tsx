@@ -5,6 +5,7 @@ import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { MobileNav } from '@/components/layout/mobile-nav'
 import { SkipToMain } from '@/components/skip-to-main'
 
 type AuthenticatedLayoutProps = {
@@ -30,11 +31,15 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
 
               // If layout is fixed and sidebar is inset,
               // set the height to 100svh - spacing (total margins) to prevent overflow
-              'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
+              'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]',
+
+              // Bottom padding for mobile nav bar
+              'pb-16 md:pb-0'
             )}
           >
             {children ?? <Outlet />}
           </SidebarInset>
+          <MobileNav />
         </SidebarProvider>
       </LayoutProvider>
     </SearchProvider>
