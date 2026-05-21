@@ -201,6 +201,19 @@ app.get('/api/projects/pending-comment-counts', (_, res) => {
   res.json(counts)
 })
 
+// Session buffer (for mobile terminal log view)
+app.get('/api/projects/:id/buffer', (req, res) => {
+  const session = manager.getSession(req.params.id)
+  if (!session) return res.json({ lines: [] })
+  const n = Math.min(parseInt(req.query.n) || 100, 500)
+  const raw = session.buffer.slice(-n * 5).join('')
+  const clean = raw
+    .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+    .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '')
+  const lines = clean.split('\n').filter(l => l.trim()).slice(-n)
+  res.json({ lines })
+})
+
 // Tunnel status
 app.get('/api/tunnel', (_, res) => {
   const tp = join(HANGAR_DIR, 'tunnel.json')

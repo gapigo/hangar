@@ -39,8 +39,8 @@ export function SessionView() {
   const [connecting, setConnecting] = useState(true)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
+  const [mobileLines, setMobileLines] = useState<string[]>([])
   const isMobile = useIsMobile()
-  const mobileInputRef = useRef<HTMLInputElement>(null)
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -132,6 +132,17 @@ export function SessionView() {
         const msg = JSON.parse(event.data)
         if (msg.type === 'data') {
           term.write(msg.data)
+          // Feed mobile log (strip ANSI)
+          const clean = msg.data
+            .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+            .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '')
+          const newLines = clean.split('\n').filter((l: string) => l.length > 0)
+          if (newLines.length > 0) {
+            setMobileLines(prev => {
+              const next = [...prev, ...newLines]
+              return next.length > 500 ? next.slice(-500) : next
+            })
+          }
         } else if (msg.type === 'exit') {
           setExited(true)
           setExitInfo({ exitCode: msg.exitCode, status: msg.status })
@@ -340,31 +351,14 @@ export function SessionView() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="terminal" className="flex-1 overflow-hidden m-0">
-              <input
-                ref={mobileInputRef}
-                className="opacity-0 absolute w-0 h-0"
-                onInput={(e) => {
-                  const val = (e.target as HTMLInputElement).value
-                  if (val && wsRef.current?.readyState === WebSocket.OPEN) {
-                    wsRef.current.send(val)
-                    ;(e.target as HTMLInputElement).value = ''
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (wsRef.current?.readyState !== WebSocket.OPEN) return
-                  if (e.key === 'Enter') wsRef.current.send('\r')
-                  if (e.key === 'Backspace') wsRef.current.send('\x7f')
-                }}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-              <div
-                ref={termRef}
-                className="flex-1 min-h-0 relative"
-                style={{ padding: '4px', background: '#09090b' }}
-                onClick={() => mobileInputRef.current?.focus()}
+              <MobileTerminal
+                projectId={id}
+                ws={wsRef.current}
+                lines={mobileLines}
+                appendLines={(newLines) => setMobileLines(prev => {
+                  const next = [...prev, ...newLines]
+                  return next.length > 500 ? next.slice(-500) : next
+                })}
               />
             </TabsContent>
             <TabsContent value="artifacts" className="flex-1 overflow-y-auto m-0">
@@ -390,6 +384,128 @@ export function SessionView() {
             )}
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function MobileTerminal({
+  projectId,
+  ws,
+  lines,
+  appendLines,
+}: {
+  projectId: string
+  ws: WebSocket | null
+  lines: string[]
+  appendLines: (newLines: string[]) => void
+}) {
+  const [input, setInput] = useState('')
+  const [autoScroll, setAutoScroll] = useState(true)
+  const logRef = useRef<HTMLDivElement>(null)
+
+  // Fetch initial buffer
+  useEffect(() => {
+    fetch(`${window.location.origin}/api/projects/${projectId}/buffer?n=200`)
+      .then(r => r.json())
+      .then(d => { if (d.lines?.length) appendLines(d.lines) })
+      .catch(() => {})
+  }, [projectId])
+
+  // Auto-scroll
+  useEffect(() => {
+    if (autoScroll && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight
+    }
+  }, [lines, autoScroll])
+
+  const sendText = (text: string) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(text)
+  }
+
+  const handleSend = () => {
+    if (!input.trim()) return
+    sendText(input + '\n')
+    setInput('')
+  }
+
+  const quickActions = [
+    { label: 'y', value: 'y\n' },
+    { label: 'n', value: 'n\n' },
+    { label: '\u2191', value: '\x1b[A' },
+    { label: '^C', value: '\x03' },
+    { label: '\u21B5', value: '\r' },
+  ]
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Output area */}
+      <div
+        ref={logRef}
+        className="flex-1 overflow-y-auto bg-black p-3 font-mono text-[11px] leading-5"
+        onScroll={(e) => {
+          const el = e.currentTarget
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          setAutoScroll(atBottom)
+        }}>
+        {lines.map((line, i) => (
+          <div key={i} className="whitespace-pre-wrap break-all text-green-300">
+            {line || '\u00A0'}
+          </div>
+        ))}
+        {!autoScroll && (
+          <button
+            onClick={() => { setAutoScroll(true); logRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }) }}
+            className="sticky bottom-2 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full shadow-lg">
+            \u2193 Jump to bottom
+          </button>
+        )}
+      </div>
+
+      {/* Quick action buttons */}
+      <div className="flex gap-1 px-2 py-1 border-t bg-muted/30 overflow-x-auto shrink-0">
+        {quickActions.map(({ label, value }) => (
+          <button
+            key={label}
+            onClick={() => sendText(value)}
+            className="shrink-0 px-3 py-1.5 rounded text-xs font-mono bg-muted hover:bg-muted/80 border font-bold">
+            {label}
+          </button>
+        ))}
+        <div className="ml-auto shrink-0 flex items-center">
+          <span className="text-[10px] text-muted-foreground">{lines.length} lines</span>
+        </div>
+      </div>
+
+      {/* Input area */}
+      <div className="flex gap-2 p-2 border-t bg-background shrink-0">
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
+          placeholder="Type command or paste here... (Enter to send)"
+          rows={2}
+          className="flex-1 resize-none text-xs font-mono bg-muted/30 border rounded p-2
+                     focus:outline-none focus:ring-1 focus:ring-primary
+                     placeholder:text-muted-foreground/50"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+        <Button
+          size="sm"
+          onClick={handleSend}
+          disabled={!input.trim()}
+          className="self-end h-8 px-3">
+          ▶
+        </Button>
       </div>
     </div>
   )
