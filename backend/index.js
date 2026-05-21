@@ -209,6 +209,18 @@ app.get('/api/tunnel', (_, res) => {
   }
   res.json({ url: null, publicUrl: null, active: false })
 })
+// Tunnel QR code
+app.get('/api/tunnel/qr', async (_, res) => {
+  const tp = join(HANGAR_DIR, 'tunnel.json')
+  if (!existsSync(tp)) return res.json({ qr: null })
+  try {
+    const { publicUrl } = JSON.parse(readFileSync(tp, 'utf8'))
+    if (!publicUrl) return res.json({ qr: null })
+    const QRCode = (await import('qrcode')).default
+    const qr = await QRCode.toDataURL(publicUrl, { width: 256, margin: 2 })
+    res.json({ qr })
+  } catch { res.json({ qr: null }) }
+})
 
 // Auth: get token
 app.get('/api/auth/token', (_, res) => res.json({ token: auth.token }))

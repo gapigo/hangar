@@ -55,6 +55,7 @@ export function SettingsView() {
   const [token, setToken] = useState('')
   const [tunnelUrl, setTunnelUrl] = useState('')
   const [tunnelActive, setTunnelActive] = useState(false)
+  const [tunnelQR, setTunnelQR] = useState<string | null>(null)
 
   const [discordToken, setDiscordToken] = useState('')
   const [discordChannelId, setDiscordChannelId] = useState('')
@@ -72,7 +73,7 @@ export function SettingsView() {
   const [hintWhatsApp, setHintWhatsApp] = useState(false)
 
   useEffect(() => {
-    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/config`)
+    fetch(`${window.location.origin}/api/config`)
       .then(r => r.json())
       .then(c => {
         setHomeDir(c.homeDir || '')
@@ -86,16 +87,17 @@ export function SettingsView() {
       if (d.discordEnabled) { setDiscordEnabled(true); setDiscordToken(d.discordBotToken || ''); setDiscordChannelId(d.discordChannelId || '') }
       if (d.whatsappEnabled) { setWhatsappEnabled(true); setWhatsappPhone(d.whatsappPhone || ''); setWhatsappChatId(d.whatsappChatId || '') }
     }).catch(() => {})
-    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/whatsapp/chats`)
+    fetch(`${window.location.origin}/api/whatsapp/chats`)
       .then(r => r.json()).then(d => { if (Array.isArray(d)) setWhatsappChats(d) }).catch(() => {})
     api.getArchive().then(setArchive).catch(() => {})
     api.getAuthToken().then(d => setToken(d.token || '')).catch(() => {})
     api.getTunnel().then(d => {
       if (d.active) { setTunnelUrl(d.publicUrl || ''); setTunnelActive(true) }
     }).catch(() => {})
-    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/whatsapp/status`)
+    api.getTunnelQR().then(d => setTunnelQR(d.qr)).catch(() => {})
+    fetch(`${window.location.origin}/api/whatsapp/status`)
       .then(r => r.json()).then(d => setWhatsappStatus(d.connected ? 'online' : 'disconnected')).catch(() => {})
-    fetch(`http://localhost:${import.meta.env.VITE_API_PORT || '3333'}/api/whatsapp/qr`)
+    fetch(`${window.location.origin}/api/whatsapp/qr`)
       .then(r => r.json()).then(d => { if (d.qr) setWhatsappQR(d.qr) }).catch(() => {})
   }, [])
 
@@ -123,10 +125,10 @@ export function SettingsView() {
   const availableHarnesses = harnesses.filter((h) => h.available)
 
   return (
-    <div className='mx-auto max-w-2xl space-y-6 p-6'>
+    <div className='flex flex-col gap-4 p-4 max-w-2xl mx-auto w-full overflow-y-auto'>
       <h1 className='text-2xl font-bold tracking-tight'>Settings</h1>
 
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Defaults</CardTitle>
           <CardDescription>Configure your Hangar workspace defaults.</CardDescription>
@@ -164,7 +166,7 @@ export function SettingsView() {
       </Card>
 
       {/* Access */}
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
             Access
@@ -181,7 +183,7 @@ export function SettingsView() {
           </div>
           <div className='grid gap-2'>
             <Label>Auth Token</Label>
-            <div className='flex gap-2'>
+            <div className='flex flex-wrap gap-2'>
               <Input value={token} readOnly className='font-mono text-xs' />
               <Button size='sm' variant='outline' onClick={copyToken}>Copy</Button>
               <Button size='sm' variant='outline' onClick={regenerateToken}>Regenerate</Button>
@@ -192,6 +194,16 @@ export function SettingsView() {
             <div className='grid gap-2'>
               <Label>Public URL</Label>
               <Input value={tunnelUrl} readOnly className='font-mono text-xs' />
+            </div>
+          )}
+          {tunnelActive && tunnelQR && (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <p className="text-xs text-muted-foreground">Scan to open on mobile</p>
+              <img
+                src={tunnelQR}
+                alt="Tunnel QR Code"
+                className="w-48 h-48 rounded-lg border"
+              />
             </div>
           )}
           <Hint open={hintTunnel} onOpenChange={setHintTunnel} title="How to set up Cloudflare Tunnel">
@@ -207,7 +219,7 @@ export function SettingsView() {
       </Card>
 
       {/* Discord */}
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
             Discord Bot
@@ -252,7 +264,7 @@ export function SettingsView() {
       </Card>
 
       {/* WhatsApp */}
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
             WhatsApp Bot
@@ -310,7 +322,7 @@ export function SettingsView() {
       </Card>
 
       {/* Archive */}
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Archive</CardTitle>
           <CardDescription>Archived projects ({archive.length})</CardDescription>
