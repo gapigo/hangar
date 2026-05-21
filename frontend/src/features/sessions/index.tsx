@@ -5,13 +5,13 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Square, ArrowLeft, Play, Loader2 } from 'lucide-react'
+import { Square, ArrowLeft, Play, Loader2, Menu } from 'lucide-react'
 import { useSSE } from '@/lib/useSSE'
 import { cn } from '@/lib/utils'
 import { api, type Project } from '@/lib/api'
 import { ArtifactsPanel } from '@/features/sessions/ArtifactsPanel'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import '@xterm/xterm/css/xterm.css'
 
 const statusColors: Record<string, string> = {
@@ -40,7 +40,14 @@ export function SessionView() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [mobileLines, setMobileLines] = useState<string[]>([])
+
+  const sendText = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(text)
+    }
+  }, [])
   const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -234,13 +241,13 @@ export function SessionView() {
   }, [])
 
   return (
-    <div className='flex h-full'>
-      {/* Left sidebar - project switcher */}
-      <div className='hidden md:flex w-[240px] flex-col border-r bg-muted/30'>
-        <div className='border-b p-3'>
-          <h2 className='text-sm font-semibold'>Sessions</h2>
-        </div>
-        <ScrollArea className='flex-1'>
+    <div className='flex h-full overflow-hidden'>
+      {/* Desktop: fixed sidebar */}
+      {!isMobile && (
+        <div className='w-[240px] shrink-0 flex-col border-r bg-muted/30 overflow-y-auto'>
+          <div className='border-b p-3'>
+            <h2 className='text-sm font-semibold'>Sessions</h2>
+          </div>
           <div className='flex flex-col gap-1 p-2'>
             {projects.map((p) => (
               <button
@@ -267,14 +274,53 @@ export function SessionView() {
               <div className='px-3 py-4 text-xs text-muted-foreground'>No projects yet.</div>
             )}
           </div>
-        </ScrollArea>
-      </div>
+        </div>
+      )}
+
+      {/* Mobile: Sheet drawer for session list */}
+      {isMobile && (
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent side="left" className="w-[220px] p-0">
+            <div className="overflow-y-auto h-full pt-12">
+              <div className="flex flex-col gap-1 p-2">
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => { navigate({ to: '/sessions/$id', params: { id: p.id } }); setSidebarOpen(false) }}
+                    className={`flex flex-col items-start rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                      p.id === id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+                    }`}
+                  >
+                    <span className='font-medium'>{p.name}</span>
+                    <div className='mt-1 flex flex-wrap gap-1'>
+                      <Badge className={`text-[10px] ${statusColors[p.status]}`}>
+                        {p.id === id && exitInfo ? exitInfo.status : p.status}
+                      </Badge>
+                      {p.harness && (
+                        <Badge variant='outline' className='text-[9px]'>
+                          {p.harness}
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Main terminal area */}
-      <div className='flex flex-1 flex-col'>
+      <div className='flex flex-1 flex-col overflow-hidden min-w-0'>
         {/* Header */}
-        <div className='flex items-center justify-between border-b bg-muted/20 px-4 py-2'>
-          <div className='flex items-center gap-3'>
+        <div className='flex items-center justify-between border-b bg-muted/20 px-4 py-2 shrink-0'>
+          <div className='flex items-center gap-3 min-w-0'>
+            {isMobile && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                onClick={() => setSidebarOpen(true)}>
+                <Menu size={18} />
+              </Button>
+            )}
             <Link to='/' className='text-muted-foreground hover:text-foreground'>
               <ArrowLeft className='h-4 w-4' />
             </Link>
@@ -355,7 +401,7 @@ export function SessionView() {
             <TabsContent value="terminal" className="flex-1 overflow-hidden m-0">
               <MobileTerminal
                 projectId={id}
-                ws={wsRef.current}
+                onSend={sendText}
                 lines={mobileLines}
                 appendLines={(newLines) => setMobileLines(prev => {
                   const next = [...prev, ...newLines]
@@ -393,12 +439,12 @@ export function SessionView() {
 
 function MobileTerminal({
   projectId,
-  ws,
+  onSend,
   lines,
   appendLines,
 }: {
   projectId: string
-  ws: WebSocket | null
+  onSend: (text: string) => void
   lines: string[]
   appendLines: (newLines: string[]) => void
 }) {
@@ -422,8 +468,7 @@ function MobileTerminal({
   }, [lines, autoScroll])
 
   const sendText = (text: string) => {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(text)
+    onSend(text)
   }
 
   const handleSend = () => {
